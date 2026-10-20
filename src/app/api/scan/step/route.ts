@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getLanguage, prettySourceName, type ScanLanguage } from "@/lib/forensics-config";
 import { searchWeb, translateAndClassifyBatch, type RawSearchItem, type TranslateInput } from "@/lib/llm";
+import { extractImagesFromArticle } from "@/lib/image-extract";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -122,6 +123,25 @@ export async function POST(req: Request) {
         newItems: { increment: savedFindings.length },
       },
     }).catch(() => null);
+
+    // 9) Kaydedilen bulgular için makale görsellerini çıkar (fotoğraf/şekil/çizim)
+    //    Paralel çalışır; başarısızlık adımı bozmaz — "none" işaretlenip
+    //    /api/enrich-images ile sonra kurtarılabilir.
+    if (savedFindings.length > 0) {
+      await Promise.allSettled(
+        savedFindings.slice(0, 6).map(async (f) => {
+          try {
+            const imgs = await extractImagesFromArticle(f.url, 8);
+            await db.finding.update({
+              where: { id: f.id },
+              data: { images: imgs.length > 0 ? JSON.stringify(imgs) : "none" },
+            });
+          } catch {
+            /* görsel çıkarımı opsiyoneldir */
+          }
+        })
+      );
+    }
 
     return NextResponse.json({
       success: true,

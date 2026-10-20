@@ -94,3 +94,26 @@ Stage Summary:
 - Kontrast sorunu kökten çözüldü: shadcn bileşenleri artık koyu token'larla render oluyor; tüm sayfalarda AA düzeyinde okunabilirlik sağlandı
 - Değişen dosyalar: layout.tsx, globals.css, page.tsx, analytics/report/briefing/assistant page'leri, finding-card, timeline-list, watchlist-dialog, note-dialog
 - Rapor sayfasının açık A4 teması ve baskı stilleri korundu
+
+---
+Task ID: 5
+Agent: main-agent (Z.ai)
+Task: "Makalelerdeki fotoğraf/çizim gibi görselleri aynı konu içinde göster" — makale görseli çıkarma ve gösterme özelliği
+
+Work Log:
+- prisma/schema.prisma: Finding.images alanı eklendi (JSON dizi [{url,alt}]; "[]"=denenmedi, "none"=denendi/yok), db push yapıldı
+- src/lib/image-extract.ts: og:image/twitter:image meta + <img> (src/data-src/lazyload/srcset en büyük aday) ayrıştırıcı; logo/ikon/reklam/takip pikseli URL filtresi; SVG dışlama; pathname bazlı boyut varyantı tekilleştirme; hızlı doğrudan fetch (9s) → page_reader yedeği (20s race)
+- /api/image-proxy: hotlink koruması + mixed-content aşımı için görsel proxy'si (SSRF koruması, 10s timeout, 12MB sınırı, 24h tarayıcı önbelleği)
+- /api/enrich-images: POST ile toplu zenginleştirme (concurrency 4), GET ile durum; görsel bulunamayan kayıtlar "none" ile işaretlenir
+- scan/step: kaydedilen bulgulara (ilk 6, paralel) otomatik görsel çıkarımı eklendi — adım başarısızlığını bozmaz
+- deep-dive: ensureFindingImages ile görselleri garanti eder (önbellekten bağımsız), yanıta images alanı ekledi
+- finding-card: kartlara kapak görseli (16:9, proxy üzerinden, lazy) + "n görsel" rozeti; görsele tıklayınca derin analiz açılır
+- deep-dive-sheet: "Makale Görselleri" 2 sütunlu galerisi (alt metinli) + Dialog tabanlı lightbox (büyütmüş görsel, kaynak bilgisi, orijinal görsel bağlantısı); görsel rozeti header'da
+- scripts/enrich-images-run.sh: arşivi tek seferlik zenginleştirdi — 216 bulgudan 144'üne görsel çıkarıldı (%67), 72 "none" (ölü bağlantı/görselsiz sayfa)
+- Doğrulama: /api/findings 65/100 görselli; proxy WebP 200 (24KB, 940x628); deep-dive 4 görsel + 3575 karakter analiz döndürdü; galeri (4 görsel yüklendi), lightbox, mobil 390px — hepsi ekran görüntüsüyle test edildi (download/gorsel-kontrol/01-04), konsol hatası yok
+- Not: arka plan süreçleri bash çağrıları arası öldürüldüğü için sunucu-başlat/işle/kapat tek script deseni kullanıldı (setsid + script içi döngü)
+
+Stage Summary:
+- Makale görselleri artık uçtan uca: taramada otomatik çıkarma → proxy'li gösterim → kart kapakları + derin analiz galerisi + lightbox
+- Arşiv durumu: 216 bulgu, 144 görselli; yeni taramalar görselleri otomatik çıkarıyor
+- Değişen dosyalar: schema.prisma, image-extract.ts (yeni), image-utils.ts (yeni), image-proxy + enrich-images rotaları (yeni), scan/step, deep-dive, types.ts, finding-card, deep-dive-sheet

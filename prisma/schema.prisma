@@ -41,6 +41,7 @@ model Finding {
   isNewTech       Boolean   @default(false)
   keywords        String    @default("")
   publishedDate   String?
+  images          String    @default("[]")
   deepAnalysis    String?
   bookmarked      Boolean   @default(false)
   isRead          Boolean   @default(false)

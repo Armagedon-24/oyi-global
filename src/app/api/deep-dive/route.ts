@@ -1,13 +1,50 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateDeepAnalysis } from "@/lib/llm";
+import { extractImagesFromArticle, type ExtractedImage } from "@/lib/image-extract";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 /**
+ * Bulgunun görsellerini garanti eder:
+ *  - "none" işaretliyse tekrar denemez (boş döner)
+ *  - kayıtlı görsel varsa doğrudan döner
+ *  - hiç denenmemişse ("[]") makaleden çıkarıp veritabanına kaydeder
+ */
+async function ensureFindingImages(finding: {
+  id: string;
+  url: string;
+  images: string | null;
+}): Promise<ExtractedImage[]> {
+  const raw = finding.images ?? "[]";
+  if (raw === "none") return [];
+
+  try {
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr) && arr.length > 0) return arr as ExtractedImage[];
+  } catch {
+    /* bozuk JSON → yeniden çıkar */
+  }
+
+  try {
+    const imgs = await extractImagesFromArticle(finding.url, 8);
+    await db.finding
+      .update({
+        where: { id: finding.id },
+        data: { images: imgs.length > 0 ? JSON.stringify(imgs) : "none" },
+      })
+      .catch(() => null);
+    return imgs;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * POST /api/deep-dive
- * Body: { id } — bulgunun tam makalesini okur, yapılandırılmış Türkçe analiz üretir ve önbelleğe kaydeder
+ * Body: { id, force? } — bulgunun tam makalesini okur, yapılandırılmış Türkçe
+ * analiz üretir, makale görsellerini (fotoğraf/çizim) çıkarır ve önbelleğe kaydeder.
  */
 export async function POST(req: Request) {
   try {
@@ -21,9 +58,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Bulgu bulunamadı" }, { status: 404 });
     }
 
-    // Önbellekte varsa ve zorlanmadıysa doğrudan döndür
+    // Görseller önbellekten bağımsız olarak garanti edilir
+    const images = await ensureFindingImages(finding);
+
+    // Önbellekteki analiz varsa ve zorlanmadıysa görsellerle birlikte döndür
     if (finding.deepAnalysis && !force) {
-      return NextResponse.json({ success: true, cached: true, analysis: finding.deepAnalysis });
+      return NextResponse.json({
+        success: true,
+        cached: true,
+        analysis: finding.deepAnalysis,
+        images,
+      });
     }
 
     const analysis = await generateDeepAnalysis(
@@ -38,7 +83,7 @@ export async function POST(req: Request) {
       data: { deepAnalysis: analysis },
     });
 
-    return NextResponse.json({ success: true, cached: false, analysis });
+    return NextResponse.json({ success: true, cached: false, analysis, images });
   } catch (error) {
     console.error("[deep-dive]", error);
     return NextResponse.json(

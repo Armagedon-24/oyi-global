@@ -15,8 +15,10 @@ import {
   CheckCircle2,
   StickyNote,
   Loader2,
+  Images,
 } from "lucide-react";
 import { categoryLabel, getLanguage } from "@/lib/forensics-config";
+import { imgProxyUrl, parseFindingImages } from "@/lib/image-utils";
 import type { FindingItem } from "@/lib/types";
 
 interface FindingCardProps {
@@ -57,6 +59,7 @@ export function FindingCard({
   readPending,
 }: FindingCardProps) {
   const keywords = useMemo(() => parseKeywords(finding.keywords), [finding.keywords]);
+  const images = useMemo(() => parseFindingImages(finding.images), [finding.images]);
   const langInfo = getLanguage(finding.language);
   const date = formatDate(finding.publishedDate);
 
@@ -89,6 +92,35 @@ export function FindingCard({
               </Badge>
             )}
           </div>
+
+          {/* Makale görseli (kapak) — varsa öne çıkarılır */}
+          {images.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onDeepDive(finding)}
+              className="group/img relative block w-full overflow-hidden rounded-lg border border-slate-700/80 bg-slate-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              title="Makale görsellerini görüntüle"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imgProxyUrl(images[0].url)}
+                alt={images[0].alt || finding.trTitle}
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                className="aspect-[16/9] w-full object-cover transition-transform duration-300 group-hover/img:scale-[1.03]"
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  if (el.style.display !== "none") el.style.display = "none";
+                }}
+              />
+              {images.length > 1 && (
+                <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-slate-950/85 px-2 py-0.5 text-[11px] font-medium text-slate-100 border border-slate-700 backdrop-blur-sm">
+                  <Images className="h-3 w-3 text-amber-300" />
+                  {images.length} görsel
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Türkçe başlık */}
           <h3 className="font-semibold leading-snug text-slate-50 text-[15px] line-clamp-3">

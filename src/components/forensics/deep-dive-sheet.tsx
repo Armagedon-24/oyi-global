@@ -8,13 +8,21 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, ExternalLink, Loader2 } from "lucide-react";
+import { RefreshCw, ExternalLink, Loader2, Images, ZoomIn } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { categoryLabel, getLanguage } from "@/lib/forensics-config";
+import { imgProxyUrl, parseFindingImages, type ArticleImage } from "@/lib/image-utils";
 import type { FindingItem } from "@/lib/types";
 
 interface DeepDiveSheetProps {
@@ -27,15 +35,31 @@ export function DeepDiveSheet({ finding, open, onOpenChange }: DeepDiveSheetProp
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [images, setImages] = useState<ArticleImage[]>([]);
+  const [lightbox, setLightbox] = useState<ArticleImage | null>(null);
 
   useEffect(() => {
     if (!open || !finding) return;
     setAnalysis(null);
     setError(null);
+    setLightbox(null);
+    setImages(parseFindingImages(finding.images));
 
     // Önbellekteki analiz varsa anında göster
     if (finding.deepAnalysis) {
-      setAnalysis(finding.deepAnalysis);
+      // Yine de görseller eksikse arka planda tazele
+      if (parseFindingImages(finding.images).length === 0 && finding.images !== "none") {
+        fetch("/api/deep-dive", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: finding.id }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.success && Array.isArray(data.images)) setImages(data.images);
+          })
+          .catch(() => null);
+      }
       return;
     }
 
@@ -51,6 +75,7 @@ export function DeepDiveSheet({ finding, open, onOpenChange }: DeepDiveSheetProp
         if (cancelled) return;
         if (data.success) {
           setAnalysis(data.analysis);
+          if (Array.isArray(data.images)) setImages(data.images);
         } else {
           setError(data.error ?? "Analiz üretilemedi");
         }
@@ -75,8 +100,10 @@ export function DeepDiveSheet({ finding, open, onOpenChange }: DeepDiveSheetProp
         body: JSON.stringify({ id: finding.id, force: true }),
       });
       const data = await r.json();
-      if (data.success) setAnalysis(data.analysis);
-      else setError(data.error ?? "Analiz üretilemedi");
+      if (data.success) {
+        setAnalysis(data.analysis);
+        if (Array.isArray(data.images)) setImages(data.images);
+      } else setError(data.error ?? "Analiz üretilemedi");
     } catch {
       setError("Bağlantı hatası — analiz üretilemedi");
     } finally {
@@ -104,6 +131,11 @@ export function DeepDiveSheet({ finding, open, onOpenChange }: DeepDiveSheetProp
             <Badge variant="outline" className="border-slate-700 text-slate-400 text-[11px]">
               {finding.sourceName}
             </Badge>
+            {images.length > 0 && (
+              <Badge className="bg-sky-500/15 text-sky-300 border-sky-500/30 text-[11px] gap-1">
+                <Images className="h-3 w-3" /> {images.length} görsel
+              </Badge>
+            )}
           </div>
           <SheetTitle className="text-slate-50 text-lg leading-snug pr-8">
             {finding.trTitle}
@@ -137,7 +169,54 @@ export function DeepDiveSheet({ finding, open, onOpenChange }: DeepDiveSheetProp
         </SheetHeader>
 
         <ScrollArea className="flex-1 min-h-0">
-          <div className="p-6 pt-4">
+          <div className="p-6 pt-4 space-y-5">
+            {/* Makale görselleri galerisi */}
+            {images.length > 0 && (
+              <section>
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-100 mb-2.5">
+                  <Images className="h-4 w-4 text-amber-400" />
+                  Makale Görselleri
+                  <span className="text-xs font-normal text-slate-400">
+                    (fotoğraf, şekil ve çizimler — büyütmek için tıklayın)
+                  </span>
+                </h3>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {images.map((img, i) => (
+                    <figure key={`${img.url}-${i}`} className="group/gal relative">
+                      <button
+                        type="button"
+                        onClick={() => setLightbox(img)}
+                        className="relative block w-full overflow-hidden rounded-lg border border-slate-700/80 bg-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                        title="Görseli büyüt"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={imgProxyUrl(img.url)}
+                          alt={img.alt || finding.trTitle}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          className="aspect-[4/3] w-full object-cover transition-transform duration-300 group-hover/gal:scale-[1.04]"
+                          onError={(e) => {
+                            const fig = e.currentTarget.closest("figure");
+                            if (fig) fig.style.display = "none";
+                          }}
+                        />
+                        <span className="absolute inset-0 flex items-center justify-center bg-slate-950/0 opacity-0 transition-all group-hover/gal:bg-slate-950/40 group-hover/gal:opacity-100">
+                          <ZoomIn className="h-6 w-6 text-amber-300" />
+                        </span>
+                      </button>
+                      {img.alt && (
+                        <figcaption className="mt-1.5 text-[11px] leading-snug text-slate-400 line-clamp-2">
+                          {img.alt}
+                        </figcaption>
+                      )}
+                    </figure>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Yükleme durumu */}
             {loading && (
               <div className="space-y-4">
                 <div className="flex items-center gap-3 p-4 rounded-lg border border-amber-500/20 bg-amber-500/5">
@@ -218,6 +297,50 @@ export function DeepDiveSheet({ finding, open, onOpenChange }: DeepDiveSheetProp
             )}
           </div>
         </ScrollArea>
+
+        {/* Görsel büyüteç (lightbox) */}
+        <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
+          <DialogContent className="max-w-3xl bg-slate-950 border-slate-700 p-4 gap-3">
+            {lightbox && (
+              <>
+                <DialogHeader className="space-y-1">
+                  <DialogTitle className="text-slate-100 text-sm font-semibold leading-snug">
+                    {lightbox.alt || finding.trTitle}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-slate-400">
+                    Makale görseli — {finding.sourceName}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imgProxyUrl(lightbox.url)}
+                    alt={lightbox.alt || finding.trTitle}
+                    referrerPolicy="no-referrer"
+                    className="max-h-[65vh] w-full object-contain"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-slate-500 truncate flex-1">{lightbox.url}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs border-slate-700 bg-slate-900 hover:bg-slate-800 shrink-0"
+                    asChild
+                  >
+                    <a href={lightbox.url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      Orijinal görsel
+                    </a>
+                  </Button>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
       </SheetContent>
     </Sheet>
   );

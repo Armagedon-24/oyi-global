@@ -15,6 +15,7 @@ export interface FindingItem {
   isNewTech: boolean;
   keywords: string; // JSON dizi string'i
   publishedDate: string | null;
+  images: string; // JSON: [{url, alt}] | "[]" (denenmedi) | "none" (yok)
   deepAnalysis: string | null;
   bookmarked: boolean;
   isRead: boolean;
