@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model ScanRun {
+  id               String    @id @default(cuid())
+  scope            String    @default("all")
+  focusCategory    String?
+  status           String    @default("running")
+  totalFound       Int       @default(0)
+  newItems         Int       @default(0)
+  languagesCovered Int       @default(0)
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  findings         Finding[]
+}
+
+model Finding {
+  id              String    @id @default(cuid())
+  scanId          String?
+  url             String    @unique
+  originalTitle   String
+  originalSnippet String    @default("")
+  trTitle         String
+  trSummary       String    @default("")
+  language        String
+  sourceName      String    @default("")
+  category        String    @default("genel")
+  importance      Int       @default(3)
+  isNewTech       Boolean   @default(false)
+  keywords        String    @default("")
+  publishedDate   String?
+  deepAnalysis    String?
+  bookmarked      Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  scan            ScanRun?  @relation(fields: [scanId], references: [id], onDelete: SetNull)
+
+  @@index([category])
+  @@index([language])
+  @@index([createdAt])
+}
