@@ -19,6 +19,12 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Fingerprint,
   Radar,
   Radar as RadarIcon,
@@ -38,12 +44,19 @@ import {
   FileText,
   LayoutGrid,
   GitCommitHorizontal,
+  Bot,
+  Newspaper,
+  Download,
+  FileJson,
+  FileSpreadsheet,
+  CheckCircle2,
 } from "lucide-react";
 import { CATEGORIES, SCAN_LANGUAGES, categoryLabel } from "@/lib/forensics-config";
 import { FindingCard } from "@/components/forensics/finding-card";
 import { DeepDiveSheet } from "@/components/forensics/deep-dive-sheet";
 import { WatchlistDialog } from "@/components/forensics/watchlist-dialog";
 import { TimelineList } from "@/components/forensics/timeline-list";
+import { NoteDialog } from "@/components/forensics/note-dialog";
 import type { FindingItem, ScanLogEntry, StatsData } from "@/lib/types";
 
 const ALL_LANG_VALUE = "all";
@@ -63,6 +76,7 @@ export default function Home() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<string>("recent");
   const [onlyBookmarked, setOnlyBookmarked] = useState(false);
+  const [onlyUnread, setOnlyUnread] = useState(false);
 
   // ---- Tarama durumu ----
   const [scanning, setScanning] = useState(false);
@@ -80,6 +94,11 @@ export default function Home() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [bookmarkPendingId, setBookmarkPendingId] = useState<string | null>(null);
 
+  // ---- Okundu / not ----
+  const [readPendingId, setReadPendingId] = useState<string | null>(null);
+  const [noteFinding, setNoteFinding] = useState<FindingItem | null>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
+
   // ---- Görünüm ve izleme ----
   const [view, setView] = useState<"kart" | "zaman">("kart");
   const [watchOpenSignal, setWatchOpenSignal] = useState(0);
@@ -92,6 +111,7 @@ export default function Home() {
         q: debouncedQuery,
         sort,
         bookmarked: onlyBookmarked ? "1" : "0",
+        unread: onlyUnread ? "1" : "0",
         limit: "120",
       });
       const res = await fetch(`/api/findings?${params}`);
@@ -102,7 +122,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [category, language, debouncedQuery, sort, onlyBookmarked]);
+  }, [category, language, debouncedQuery, sort, onlyBookmarked, onlyUnread]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -127,6 +147,7 @@ export default function Home() {
       if (!term) return;
       setSearchInput(term);
       setOnlyBookmarked(false);
+      setOnlyUnread(false);
       setCategory("all");
       document.getElementById("bulgu-listesi")?.scrollIntoView({ behavior: "smooth", block: "start" });
     };
@@ -251,6 +272,52 @@ export default function Home() {
     }
   };
 
+  // ---- Okundu işaretleme ----
+  const toggleRead = async (f: FindingItem) => {
+    setReadPendingId(f.id);
+    const optimistic = !f.isRead;
+    setFindings((prev) => prev.map((x) => (x.id === f.id ? { ...x, isRead: optimistic } : x)));
+    try {
+      await fetch(`/api/findings/${f.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isRead: optimistic }),
+      });
+    } catch {
+      setFindings((prev) => prev.map((x) => (x.id === f.id ? { ...x, isRead: f.isRead } : x)));
+    } finally {
+      setReadPendingId(null);
+    }
+  };
+
+  // ---- Kişisel not kaydetme ----
+  const saveNote = async (f: FindingItem, notes: string) => {
+    const trimmed = notes.trim();
+    setFindings((prev) =>
+      prev.map((x) => (x.id === f.id ? { ...x, notes: trimmed || null } : x))
+    );
+    try {
+      await fetch(`/api/findings/${f.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: trimmed }),
+      });
+      toast({
+        title: trimmed ? "Not kaydedildi" : "Not silindi",
+        description: trimmed ? "Bulgu kartında görünecek." : undefined,
+      });
+    } catch {
+      setFindings((prev) =>
+        prev.map((x) => (x.id === f.id ? { ...x, notes: f.notes } : x))
+      );
+      toast({
+        title: "Not kaydedilemedi",
+        description: "Lütfen tekrar deneyin.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const openDeepDive = (f: FindingItem) => {
     setActiveFinding(f);
     setSheetOpen(true);
@@ -292,6 +359,22 @@ export default function Home() {
                 : "Henüz tarama yapılmadı"}
             </div>
             <WatchlistDialog openSignal={watchOpenSignal} />
+            <Link
+              href="/assistant"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-300 transition-colors"
+              title="AI İstihbarat Asistanı — arşiv bağlamlı soru-cevap"
+            >
+              <Bot className="h-4 w-4" />
+              <span className="hidden lg:inline">Asistan</span>
+            </Link>
+            <Link
+              href="/briefing"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-300 transition-colors"
+              title="AI İstihbarat Bülteni — LLM sentezli dönem raporu"
+            >
+              <Newspaper className="h-4 w-4" />
+              <span className="hidden lg:inline">Bülten</span>
+            </Link>
             <Link
               href="/analytics"
               className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-300 transition-colors"
@@ -575,6 +658,19 @@ export default function Home() {
                 </SelectContent>
               </Select>
               <Button
+                variant={onlyUnread ? "default" : "outline"}
+                onClick={() => setOnlyUnread((v) => !v)}
+                className={`h-9 px-3 text-sm ${
+                  onlyUnread
+                    ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+                    : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                }`}
+                title="Yalnızca okunmamış bulgular"
+              >
+                <CheckCircle2 className={`h-4 w-4 ${onlyUnread ? "fill-slate-950" : ""}`} />
+                <span className="sr-only sm:not-sr-only sm:ml-1">Okunmamış</span>
+              </Button>
+              <Button
                 variant={onlyBookmarked ? "default" : "outline"}
                 onClick={() => setOnlyBookmarked((v) => !v)}
                 className={`h-9 px-3 text-sm ${
@@ -586,6 +682,34 @@ export default function Home() {
                 <Bookmark className={`h-4 w-4 ${onlyBookmarked ? "fill-slate-950" : ""}`} />
                 <span className="sr-only sm:not-sr-only sm:ml-1">Yer İmleri</span>
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-9 px-3 border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-amber-300"
+                    title="Arşivi dışa aktar"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span className="sr-only sm:not-sr-only sm:ml-1">Dışa Aktar</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="bg-slate-900 border-slate-700 text-slate-300">
+                  <DropdownMenuItem
+                    onClick={() => window.open("/api/export?format=csv", "_blank")}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
+                    CSV olarak indir (Excel)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => window.open("/api/export?format=json", "_blank")}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <FileJson className="h-4 w-4 text-purple-400" />
+                    JSON olarak indir
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -696,6 +820,12 @@ export default function Home() {
                   onDeepDive={openDeepDive}
                   onToggleBookmark={toggleBookmark}
                   bookmarkPending={bookmarkPendingId === f.id}
+                  onToggleRead={toggleRead}
+                  onOpenNote={(x) => {
+                    setNoteFinding(x);
+                    setNoteOpen(true);
+                  }}
+                  readPending={readPendingId === f.id}
                 />
               ))}
             </div>
@@ -726,6 +856,14 @@ export default function Home() {
 
       {/* ================= DERİN ANALİZ PANELİ ================= */}
       <DeepDiveSheet finding={activeFinding} open={sheetOpen} onOpenChange={setSheetOpen} />
+
+      {/* ================= KİŞİSEL NOT DİYALOGU ================= */}
+      <NoteDialog
+        finding={noteFinding}
+        open={noteOpen}
+        onOpenChange={setNoteOpen}
+        onSave={saveNote}
+      />
     </div>
   );
 }

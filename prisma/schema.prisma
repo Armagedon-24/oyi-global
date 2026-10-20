@@ -43,10 +43,19 @@ model Finding {
   publishedDate   String?
   deepAnalysis    String?
   bookmarked      Boolean   @default(false)
+  isRead          Boolean   @default(false)
+  notes           String?
   createdAt       DateTime  @default(now())
   scan            ScanRun?  @relation(fields: [scanId], references: [id], onDelete: SetNull)
 
   @@index([category])
   @@index([language])
   @@index([createdAt])
+}
+
+model Briefing {
+  id        String   @id @default(cuid())
+  content   String
+  itemCount Int      @default(0)
+  createdAt DateTime @default(now())
 }

@@ -12,6 +12,9 @@ import {
   Globe,
   Microscope,
   Star,
+  CheckCircle2,
+  StickyNote,
+  Loader2,
 } from "lucide-react";
 import { categoryLabel, getLanguage } from "@/lib/forensics-config";
 import type { FindingItem } from "@/lib/types";
@@ -22,6 +25,9 @@ interface FindingCardProps {
   onDeepDive: (f: FindingItem) => void;
   onToggleBookmark: (f: FindingItem) => void;
   bookmarkPending: boolean;
+  onToggleRead: (f: FindingItem) => void;
+  onOpenNote: (f: FindingItem) => void;
+  readPending: boolean;
 }
 
 function parseKeywords(raw: string): string[] {
@@ -46,6 +52,9 @@ export function FindingCard({
   onDeepDive,
   onToggleBookmark,
   bookmarkPending,
+  onToggleRead,
+  onOpenNote,
+  readPending,
 }: FindingCardProps) {
   const keywords = useMemo(() => parseKeywords(finding.keywords), [finding.keywords]);
   const langInfo = getLanguage(finding.language);
@@ -58,9 +67,13 @@ export function FindingCard({
       transition={{ duration: 0.35, delay: Math.min(index * 0.04, 0.4) }}
       className="h-full"
     >
-      <Card className="h-full flex flex-col border-slate-800 bg-slate-900/70 hover:border-amber-500/40 hover:bg-slate-900 transition-colors">
+      <Card
+        className={`h-full flex flex-col border-slate-800 bg-slate-900/70 hover:border-amber-500/40 hover:bg-slate-900 transition-colors ${
+          finding.isRead ? "opacity-75 border-l-2 border-l-emerald-500/60" : ""
+        }`}
+      >
         <CardContent className="flex-1 p-5 space-y-3">
-          {/* Üst şerit: kategori + yenilik rozeti */}
+          {/* Üst şerit: kategori + yenilik + okundu rozetleri */}
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge className="bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/15 text-[11px] font-medium">
               {categoryLabel(finding.category)}
@@ -68,6 +81,11 @@ export function FindingCard({
             {finding.isNewTech && (
               <Badge className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/15 text-[11px] font-medium gap-1">
                 <Sparkles className="h-3 w-3" /> Yenilik
+              </Badge>
+            )}
+            {finding.isRead && (
+              <Badge className="bg-slate-800 text-emerald-300 border-slate-700 hover:bg-slate-800 text-[11px] font-medium gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Okundu
               </Badge>
             )}
           </div>
@@ -93,6 +111,16 @@ export function FindingCard({
                   {kw}
                 </span>
               ))}
+            </div>
+          )}
+
+          {/* Kişisel not önizlemesi */}
+          {finding.notes && (
+            <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5">
+              <StickyNote className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-100/90 leading-relaxed line-clamp-2">
+                {finding.notes}
+              </p>
             </div>
           )}
 
@@ -159,6 +187,37 @@ export function FindingCard({
             >
               <Bookmark className={`h-3.5 w-3.5 ${finding.bookmarked ? "fill-amber-400" : ""}`} />
               <span className="sr-only">Yer imi</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={readPending}
+              onClick={() => onToggleRead(finding)}
+              className={`h-8 px-2.5 border-slate-700 bg-slate-900 hover:bg-slate-800 ${
+                finding.isRead
+                  ? "text-emerald-400 border-emerald-500/40"
+                  : "text-slate-400"
+              }`}
+              title={finding.isRead ? "Okunmadı olarak işaretle" : "Okundu olarak işaretle"}
+            >
+              {readPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className={`h-3.5 w-3.5 ${finding.isRead ? "fill-emerald-400/30" : ""}`} />
+              )}
+              <span className="sr-only">Okundu işareti</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onOpenNote(finding)}
+              className={`h-8 px-2.5 border-slate-700 bg-slate-900 hover:bg-slate-800 ${
+                finding.notes ? "text-amber-400 border-amber-500/40" : "text-slate-400"
+              }`}
+              title={finding.notes ? "Notu düzenle" : "Not ekle"}
+            >
+              <StickyNote className={`h-3.5 w-3.5 ${finding.notes ? "fill-amber-400/20" : ""}`} />
+              <span className="sr-only">Not</span>
             </Button>
           </div>
         </CardFooter>

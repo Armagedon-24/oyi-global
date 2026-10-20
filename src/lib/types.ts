@@ -17,6 +17,8 @@ export interface FindingItem {
   publishedDate: string | null;
   deepAnalysis: string | null;
   bookmarked: boolean;
+  isRead: boolean;
+  notes: string | null;
   createdAt: string;
 }
 

@@ -244,4 +244,146 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+/**
+ * AI Haftalık Bülten: arşivdeki son bulgulardan uzman anlatı özeti üretir.
+ * Dönen değer markdown formatındadır.
+ */
+export async function generateBriefing(
+  items: {
+    trTitle: string;
+    trSummary: string;
+    category: string;
+    importance: number;
+    isNewTech: boolean;
+    language: string;
+    sourceName: string;
+    publishedDate: string | null;
+  }[]
+): Promise<string> {
+  const compact = items.map((it, i) => ({
+    n: i + 1,
+    baslik: it.trTitle,
+    ozet: it.trSummary.slice(0, 220),
+    kategori: categoryLabel(it.category),
+    onem: it.importance,
+    yenilik: it.isNewTech,
+    kaynak: it.sourceName,
+    dil: it.language,
+  }));
+
+  const prompt = `Aşağıda olay yeri inceleme / adli bilimler izleme arşivinden ${items.length} adet güncel bulgu var.
+Bu bulguları inceleyerek profesyonel bir TÜRKÇE istihbarat bülteni yaz. Okuyucu: adli bilimler uzmanı, olay yeri inceleme görevlisi ve emniyet/kriminalistik yöneticileri.
+
+BULGULAR (JSON):
+${JSON.stringify(compact, null, 1)}
+
+Bülteni tam olarak şu markdown yapısıyla üret:
+
+## 🎯 Yönetici Özeti
+(3-5 cümle: bu dönemde alanın genel gidişatı, en çarpıcı 2-3 gelişme ve genel eğilim — anlatı diliyle)
+
+## 🔺 Öne Çıkan Gelişmeler
+(En önemli 5-7 bulguyu "### " alt başlıklarıyla tek tek ele al: ne olduğu, neden önemli, hangi boşluğu dolduruyor. Her başlıkta bulgu numarasına [B#n] şeklinde atıf ver.)
+
+## 🧪 Yükselen Teknolojiler
+(isNewTech=true olan bulgulardan sentez: hangi teknolojik akımlar öne çıkıyor — örn. yapay zekâ destekli analiz, taşınabilir cihazlar, 3B belgeleme vb. 2-4 madde)
+
+## 🌍 Bölgesel Görünüm
+(Kaynak dilleri/kayıp ülkeleri göz önünde bulundurarak hangi bölgelerde hangi konulara odaklanıldığını yorumla. Veri azsa bunu dürüstçe belirt.)
+
+## 📌 Öneriler ve İzlenecekler
+(Uzman ekipler için 3-5 pratik öneri + önümüzdeki dönemde izlenmesi gereken konular. Madde işaretli.)
+
+Uyarılar:
+- YALNIZCA markdown üret, giriş/cıkış cümleleri ekleme.
+- Bulgularda olmayan bilgiyi UYDURMA; sentez yap, alıntı yapma.
+- Bulguları "B1, B5" gibi numara atıflarıyla referans göster.
+- Profesyonel ama akıcı bir istihbarat raporu dili kullan.`;
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const zai = await getZAI();
+      const completion = await zai.chat.completions.create({
+        messages: [
+          {
+            role: "assistant",
+            content:
+              "Sen uluslararası adli bilimler istihbaratı alanında uzmanlaşmış bir bülten editörüsün. Yalnızca istenen markdown raporu üretirsin.",
+          },
+          { role: "user", content: prompt },
+        ],
+        thinking: { type: "disabled" },
+      });
+      const content = completion?.choices?.[0]?.message?.content ?? "";
+      if (content.trim().length > 200) return content.trim();
+      throw new Error("Bülten içeriği çok kısa");
+    } catch (err) {
+      console.error(`[generateBriefing] Deneme ${attempt} başarısız:`, err);
+      if (attempt === 2) {
+        return `## ⚠️ Bülten Üretilemedi\n\nŞu anda bülten oluşturulamadı. Lütfen birkaç dakika sonra tekrar deneyin.`;
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+  return `## ⚠️ Bülten Üretilemedi\n\nLütfen tekrar deneyin.`;
+}
+
+/** Asistan konuşma mesajı tipi */
+export interface AssistantMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/**
+ * AI İstihbarat Asistanı: arşiv bağlamı + güncel web araması ile Türkçe yanıt üretir.
+ */
+export async function assistantReply(
+  history: AssistantMessage[],
+  archiveContext: string,
+  webContext: string
+): Promise<string> {
+  const lastUser =
+    [...history].reverse().find((m) => m.role === "user")?.content ?? "";
+
+  const systemPrompt = `Sen KrimiScan Global'in AI İstihbarat Asistanısın: olay yeri inceleme teknikleri ve adli bilimler alanında uzmanlaşmış, TÜRKÇE konuşan bir analistsin.
+
+GÖREVİN:
+- Kullanıcının sorularını, verilen ARŞİV BAĞLAMI ve gerekirse GENEL BİLGİNle yanıtla.
+- Arşivde ilgili bulgu varsa bunlara [B#n] koduyla atıf yap ve kaynak adını söyle.
+- Küresel perspektif ver: hangi ülke/kurum ne yapıyor, hangi yöntem öne çıkıyor.
+- Teknik terimlerin Türkçe karşılığını parantez içinde orijinaliyle ver (örn. "iz delili (trace evidence)").
+- Yanıtlarını markdown ile yapılandır: kısa paragraflar, gerektiğinde madde işaretleri.
+- Alanla ilgisiz sorularda kibarca alanına yönlendir.
+- Emin olmadığın bilgiyi uydurma; "kesin bilgi bulunamadı" deyip kaynak öner.
+
+${archiveContext}
+${webContext}`;
+
+  const messages: { role: "assistant" | "user"; content: string }[] = [
+    { role: "assistant", content: systemPrompt },
+    // Son 8 mesajı koru (bağlam penceresi)
+    ...history.slice(-8).map((m) => ({ role: m.role, content: m.content })),
+  ];
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const zai = await getZAI();
+      const completion = await zai.chat.completions.create({
+        messages,
+        thinking: { type: "disabled" },
+      });
+      const content = completion?.choices?.[0]?.message?.content ?? "";
+      if (content.trim().length > 2) return content.trim();
+      throw new Error("Boş yanıt");
+    } catch (err) {
+      console.error(`[assistantReply] Deneme ${attempt} başarısız:`, err);
+      if (attempt === 2) {
+        return `## ⚠️\nYanıt üretilirken bir sorun oluştu. Lütfen sorunuzu tekrar iletin.\n\n*(Soru: "${lastUser.slice(0, 120)}")*`;
+      }
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+  }
+  return "Yanıt üretilemedi, lütfen tekrar deneyin.";
+}
+
 export { categoryLabel };

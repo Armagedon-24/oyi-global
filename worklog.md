@@ -47,3 +47,31 @@ Stage Summary:
 - 4 yeni özellik canlı: /analytics (trend panosu), /report (yazdırılabilir rapor), İzleme diyaloğu (kelime uyarı sistemi), Zaman Çizelgesi görünümü
 - Not: recharts --full sayfa ekran görüntüsünde bozuk görünür ama gerçek viewport'ta düzgündür (ResizeObserver artifact'ı, ürün hatası değil)
 - Veritabanında demo izleme kelimesi "yapay zekâ" (1 eşleşme) bırakıldı
+
+---
+Task ID: 3
+Agent: main-agent (Z.ai)
+Task: Kullanıcının "bu uygulamaya başka ne ekleyebilirim?" sorusu üzerine 3. tur özellik seti: AI İstihbarat Asistanı (sohbet), AI Haftalık Bülten, Okundu/Not yönetimi, CSV/JSON dışa aktarma
+
+Work Log:
+- prisma/schema.prisma: Finding'e isRead (Boolean @default false) + notes (String?) alanları; yeni Briefing modeli (content, itemCount, createdAt) eklendi; db push + generate yapıldı
+- src/lib/llm.ts: generateBriefing() (30 bulgudan 5 bölümlü markdown istihbarat bülteni: Yönetici Özeti, Öne Çıkan Gelişmeler [B#n atıflı], Yükselen Teknolojiler, Bölgesel Görünüm, Öneriler) + assistantReply() (arşiv atıflı Türkçe sohbet, son 8 mesaj bağlam penceresi) yazıldı
+- src/app/api/assistant/route.ts: POST — arşivden en güncel 60 bulguyu kompakt bağlam derler + soruyla canlı web araması (soru işaretleri temizlenip 120 karaktere kırpılır; 422 hataları zarifçe yutulur)
+- src/app/api/briefing/route.ts: GET (son bülten + totalFindings), POST (24 saat önbellek, force ile yeniden üretim, önem×2+yenilik skorlamasıyla 45→30 bulgu seçimi, son 10 bülten saklanır)
+- src/app/api/export/route.ts: GET ?format=csv|json — 178 kayıt; CSV UTF-8 BOM + ; ayırıcı + tırnak kaçışı; JSON yapılandırılmış export. DİKKAT: Content-Disposition başlığına Türkçe karakter (ş) konulamaz — ByteString hatası (dosya adı ASCII yapıldı: krimiscan-arsiv-YYYY-MM-DD)
+- src/app/api/findings/[id]/route.ts: PATCH genişletildi — bookmarked/isRead/notes alanları + toggleBookmark/toggleRead/clearNotes kısayolları
+- src/app/api/findings/route.ts: GET'e unread=1 filtresi eklendi
+- src/app/assistant/page.tsx: sohbet arayüzü — karşılama mesajı, 4 hazır soru çipi, markdown render'lı asistan yanıtları, kullanıcı baloncukları, giriş alanı (Enter/Shift+Enter), Yeni Sohbet, sticky alt çubuk
+- src/app/briefing/page.tsx: bülten sayfası — künye rozetleri (tarih, bulgu sayısı), markdown render (print dostu sınıflar), Yazdır (window.print), Yenile (force), boş durum, üretim animasyonu
+- src/components/forensics/note-dialog.tsx: kişisel not diyaloğu (Textarea 4000 sınırı, not silme, kategori/kaynak rozetleri)
+- src/components/forensics/finding-card.tsx: okundu butonu (yeşil vurgu + sol kenarlık + soluklaşma), not butonu, kart içi not önizlemesi (amber kutu), Okundu rozeti
+- src/app/page.tsx: header'a Asistan (Bot) + Bülten (Newspaper) linkleri; filtre çubuğuna Okunmamış toggle + Dışa Aktar dropdown (CSV/JSON); toggleRead/saveNote optimistic handler'ları; krimiscan:search handler'ı onlyUnread'i de sıfırlıyor
+- Doğrulama: export JSON 178 kayıt 219KB / CSV 107KB OK; PATCH isRead+notes OK; asistan 12-17sn'de [B#n] atıflı Türkçe yanıt OK; bülten 24sn'de 4794 karakter üretti OK; unread filtre 178→177 OK
+- Agent Browser: ana sayfa (header linkleri), okundu işaretleme, not diyaloğu + kart önizlemesi + toast, dışa aktar menüsü, /assistant canlı soru-cevap ([B#52] atıflı), /briefing künye + içerik, mobil 390px — hepsi temiz, konsol hatası yok
+- Veritabanında demo not + okundu işareti ilk kartta bırakıldı ("Vaka dosyası için incelenecek…")
+
+Stage Summary:
+- 4 yeni özellik canlı: /assistant (arşiv+web bağlamlı AI sohbet), /briefing (LLM sentezli istihbarat bülteni), okundu/not iş akışı, CSV/JSON veri dışa aktarma
+- Bilinen davranış: web araması soru cümlelerinde 422 dönebilir — asistan arşiv bağlamıyla yanıtlamaya devam eder (zarif düşüş); 24 saatlik bülten önbelleği force ile aşılabilir
+- Toplam uygulama durumu: 5 sayfa (/, /analytics, /report, /assistant, /briefing), 11 API rotası, 178 bulgu arşivi
+

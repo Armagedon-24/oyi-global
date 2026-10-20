@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 /**
  * GET /api/findings
- * Sorgu parametreleri: category, language, q, bookmarked, sort (recent|importance|newtech), limit
+ * Sorgu parametreleri: category, language, q, bookmarked, unread, sort (recent|importance|newtech), limit
  */
 export async function GET(req: Request) {
   try {
@@ -14,6 +14,7 @@ export async function GET(req: Request) {
     const language = searchParams.get("language") ?? "all";
     const q = (searchParams.get("q") ?? "").trim();
     const bookmarked = searchParams.get("bookmarked") === "1";
+    const unread = searchParams.get("unread") === "1";
     const sort = searchParams.get("sort") ?? "recent";
     const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit")) || 60));
 
@@ -21,6 +22,7 @@ export async function GET(req: Request) {
     if (category !== "all") where.category = category;
     if (language !== "all") where.language = language;
     if (bookmarked) where.bookmarked = true;
+    if (unread) where.isRead = false;
     if (q) {
       where.OR = [
         { trTitle: { contains: q } },
