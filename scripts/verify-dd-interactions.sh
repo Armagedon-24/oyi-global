@@ -2,7 +2,7 @@
 # KrimiScan — derin analiz görsel galerisi + lightbox etkileşim doğrulaması
 cd /home/z/my-project
 
-pkill -f "next dev" 2>/dev/null; sleep 1
+# GÜVENLİK: pkill kaldırıldı — platformun kalıcı Next.js sunucusu asla öldürülmez
 setsid nohup bun run dev > /tmp/next-dev.log 2>&1 < /dev/null &
 for i in $(seq 1 30); do
   CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 --max-time 3)
@@ -78,5 +78,5 @@ agent-browser screenshot scripts/verify-dd-mobil.png
 cp scripts/verify-dd-mobil.png download/gorsel-kontrol/04-mobil-kart.png
 
 agent-browser close
-pkill -f "next dev" 2>/dev/null
+# GÜVENLİK: pkill kaldırıldı — platformun kalıcı Next.js sunucusu asla öldürülmez
 echo "=== ETKİLEŞİM DOĞRULAMASI TAMAM ==="

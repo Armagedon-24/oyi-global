@@ -1,7 +1,7 @@
 #!/bin/bash
 # İzleme diyaloğu + zaman çizelgesi etkileşim testi
 cd /home/z/my-project
-pkill -f "next dev" 2>/dev/null; sleep 1
+# GÜVENLİK: pkill kaldırıldı — platformun kalıcı Next.js sunucusu asla öldürülmez
 nohup bun run dev > /dev/null 2>&1 &
 for i in $(seq 1 30); do
   CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 --max-time 3)
@@ -38,5 +38,5 @@ echo "=== Konsol hata kontrolü ==="
 agent-browser errors | head -5
 
 agent-browser close
-pkill -f "next dev" 2>/dev/null
+# GÜVENLİK: pkill kaldırıldı — platformun kalıcı Next.js sunucusu asla öldürülmez
 echo "=== TEST BİTTİ ==="

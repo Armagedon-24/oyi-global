@@ -5,7 +5,7 @@ cd /home/z/my-project
 BUDGET=${1:-440}
 
 echo "=== [1] Eski süreçleri temizle ==="
-pkill -f "next dev" 2>/dev/null; sleep 1
+# GÜVENLİK: pkill kaldırıldı — platformun kalıcı Next.js sunucusu asla öldürülmez
 
 echo "=== [2] Dev sunucuyu başlat ==="
 setsid nohup bun run dev > /tmp/next-dev.log 2>&1 < /dev/null &
@@ -45,5 +45,5 @@ echo "=== [5] Final durum ==="
 curl -s http://localhost:3000/api/enrich-images --max-time 30
 echo
 
-pkill -f "next dev" 2>/dev/null
+# GÜVENLİK: pkill kaldırıldı — platformun kalıcı Next.js sunucusu asla öldürülmez
 echo "=== SCRIPT BİTTİ ==="

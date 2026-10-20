@@ -4,7 +4,7 @@
 cd /home/z/my-project
 
 echo "=== [1] Eski süreçleri temizle ==="
-pkill -f "next dev" 2>/dev/null; sleep 1
+# GÜVENLİK: pkill kaldırıldı — platformun kalıcı Next.js sunucusu asla öldürülmez
 
 echo "=== [2] Dev sunucuyu başlat ==="
 nohup bun run dev > /dev/null 2>&1 &
@@ -80,5 +80,5 @@ if [ -n "$WID" ]; then
 fi
 
 kill $SERVER_PID 2>/dev/null
-pkill -f "next dev" 2>/dev/null
+# GÜVENLİK: pkill kaldırıldı — platformun kalıcı Next.js sunucusu asla öldürülmez
 echo "=== DOĞRULAMA TAMAMLANDI ==="

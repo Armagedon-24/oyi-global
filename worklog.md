@@ -117,3 +117,20 @@ Stage Summary:
 - Makale görselleri artık uçtan uca: taramada otomatik çıkarma → proxy'li gösterim → kart kapakları + derin analiz galerisi + lightbox
 - Arşiv durumu: 216 bulgu, 144 görselli; yeni taramalar görselleri otomatik çıkarıyor
 - Değişen dosyalar: schema.prisma, image-extract.ts (yeni), image-utils.ts (yeni), image-proxy + enrich-images rotaları (yeni), scan/step, deep-dive, types.ts, finding-card, deep-dive-sheet
+
+---
+Task ID: 6
+Agent: main-agent (Z.ai)
+Task: "Boş ekran çıkıyor kontrol et ve düzelt" — uygulamanın erişilemez olma sorununun teşhisi ve düzeltilmesi
+
+Work Log:
+- KÖK NEDEN: Önceki görevlerdeki doğrulama scriptlerinin sonundaki `pkill -f "next dev"` komutu, konteyner açılışında /start.sh → .zscripts/dev.sh zinciriyle başlatılan KALICI Next.js sunucusunu da öldürdü. Önizleme ağ geçidi (port 81 → localhost:3000) ayakta kaldığı için kullanıcıya ulaşan sayfa boş/erişilemez göründü; 3000 portunu dinleyen hiçbir süreç yoktu.
+- Platform mimarisi anlaşıldı: PID 1 = tini -- /start.sh; port 81'de ters vekil (reverse proxy); Next.js sunucusu yalnızca konteyner açılışında bir kez başlatılıyor, otomatik yeniden başlatıcı yok. Bash araç çağrıları arası düz arka plan görevleri öldüğü için sunucu `setsid -f nohup bun run dev` ile tam bağımsız oturum olarak başlatıldı — 4 ardışık çağrıda ayakta kaldığı doğrulandı.
+- YİNELEME ÖNLEMİ: scripts/ altındaki tüm scriptlerdeki (enrich-images-run, verify-images, verify-dd-interactions, verify-features, verify-interactions) `pkill -f "next dev"` satırları kaldırıldı; verify-blank-fix.sh gerektiğinde sunucuyu koşullu başlatıyor (çalışıyorsa dokunmuyor, asla öldürmüyor).
+- Doğrulama: /api/stats (success+stats şekli), /api/findings (20 kayıt, 12 görselli) OK; /, /analytics, /report, /assistant, /briefing hepsi HTTP 200; tarayıcıda DOM kontrolü (120 başlık, 56k karakter metin, görseller yükleniyor — boş ekran DEĞİL); derin analiz paneli açılıyor, galeri 4 görsel; konsol hatası yok.
+- Ekran görüntüleri: scripts/verify-blankfix-*.png + download/gorsel-kontrol/05-bos-ekran-cozuldu-ana-sayfa.png
+
+Stage Summary:
+- Boş ekran sorunu çözüldü: uygulama sunucusu kalıcı olarak geri getirildi (setsid -f), tüm 5 sayfa + API'ler + görsel proxy sağlıklı
+- Gelecek tekrarını önlemek için tüm doğrulama scriptleri güvenli hale getirildi (pkill yasaklandı, koşullu başlatma)
+- Not: Konteyner yeniden başlatılırsa /start.sh → .zscripts/dev.sh akışı her şeyi otomatik geri yükler (repo.tar + db + sunucu)

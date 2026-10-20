@@ -3,7 +3,7 @@
 cd /home/z/my-project
 
 echo "=== [1] Eski süreçleri temizle ==="
-pkill -f "next dev" 2>/dev/null; sleep 1
+# GÜVENLİK: pkill kaldırıldı — platformun kalıcı Next.js sunucusu asla öldürülmez
 
 echo "=== [2] Dev sunucuyu başlat ==="
 setsid nohup bun run dev > /tmp/next-dev.log 2>&1 < /dev/null &
@@ -104,5 +104,5 @@ for p in "/analytics" "/report" "/briefing"; do
   echo "$p -> HTTP $C"
 done
 
-pkill -f "next dev" 2>/dev/null
+# GÜVENLİK: pkill kaldırıldı — platformun kalıcı Next.js sunucusu asla öldürülmez
 echo "=== DOĞRULAMA TAMAMLANDI ==="
