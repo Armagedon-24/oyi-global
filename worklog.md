@@ -24,3 +24,26 @@ Stage Summary:
 - Derin analiz: tam makale okuma + 6 bölümlü yapılandırılmış Türkçe uzman raporu (önbellekli)
 - Veri: 178 bulgu, 14 dil, 56 "yeni teknoloji" etiketli kayıt
 - Bilinen sınır: LLM içerik filtresi nadiren 400 dönebilir (retry ile ele alınır); paralel taramalarda 429 hız limiti görülebilir (tek taramada sorun yok)
+
+---
+Task ID: 2
+Agent: main-agent (Z.ai)
+Task: Kullanıcının "bu uygulamaya başka ne ekleyebilirim?" sorusu üzerine 4 yeni özellik ekleme: Analitik panel, PDF rapor, anahtar kelime izleme, zaman çizelgesi
+
+Work Log:
+- prisma/schema.prisma: WatchKeyword modeli eklendi (term @unique), db push + generate yapıldı
+- src/app/api/analytics/route.ts: kategori/dil/önem groupBy, 8 haftalık akış bucket'ları, top-10 kaynak, JSON keyword frekans analizi, yenilik oranı
+- src/app/api/watchlist/route.ts: GET (eşleşme sayısı + son eşleşme), POST (dedupe); [id]/route.ts: DELETE
+- src/app/analytics/page.tsx: recharts ile haftalık alan grafiği (Toplam+Yenilik), yatay kategori barları, dil barları, önem donut grafiği, kaynak bar listesi, trend kelime çipleri, KPI kartları
+- src/app/report/page.tsx: server component + force-dynamic; A4 baskı dostu açık tema rapor (Yönetici Özeti, Kategori Dağılımı, Top 15 bulgu, yöntem notu); @media print CSS; ReportToolbar (window.print)
+- src/components/forensics/watchlist-dialog.tsx: Dialog ile kelime ekle/sil, eşleşme sayacı, "arşivde ara" (CustomEvent krimiscan:search)
+- src/components/forensics/timeline-list.tsx: Bugün/Dün/N gün önce gruplu kronolojik zaman çizelgesi
+- src/app/page.tsx: header'a İzleme (badge'li) + Analitik + Rapor linkleri; Kart/Zaman Çizelgesi görünüm değiştirici; krimiscan:search event dinleyici
+- Ön var olan tip hatası düzeltildi: scan/step/route.ts savedFindings tiplemesi (never[] → Awaited<ReturnType>)
+- scripts/verify-features.sh + verify-interactions.sh: tek seferlik sunucu aya kaldırıp API + sayfa + etkileşim testleri, 8 ekran görüntüsü
+- Doğrulama: /api/analytics OK (178 bulgu, %31 yenilik), watchlist CRUD OK, 3 sayfa HTTP 200, diyalog + timeline görsel olarak test edildi, konsol hatası yok
+
+Stage Summary:
+- 4 yeni özellik canlı: /analytics (trend panosu), /report (yazdırılabilir rapor), İzleme diyaloğu (kelime uyarı sistemi), Zaman Çizelgesi görünümü
+- Not: recharts --full sayfa ekran görüntüsünde bozuk görünür ama gerçek viewport'ta düzgündür (ResizeObserver artifact'ı, ürün hatası değil)
+- Veritabanında demo izleme kelimesi "yapay zekâ" (1 eşleşme) bırakıldı

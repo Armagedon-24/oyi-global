@@ -20,6 +20,12 @@ model ScanRun {
   findings         Finding[]
 }
 
+model WatchKeyword {
+  id        String   @id @default(cuid())
+  term      String   @unique
+  createdAt DateTime @default(now())
+}
+
 model Finding {
   id              String    @id @default(cuid())
   scanId          String?

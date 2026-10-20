@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,10 +34,16 @@ import {
   CircleAlert,
   Loader2,
   ShieldCheck,
+  BarChart3,
+  FileText,
+  LayoutGrid,
+  GitCommitHorizontal,
 } from "lucide-react";
 import { CATEGORIES, SCAN_LANGUAGES, categoryLabel } from "@/lib/forensics-config";
 import { FindingCard } from "@/components/forensics/finding-card";
 import { DeepDiveSheet } from "@/components/forensics/deep-dive-sheet";
+import { WatchlistDialog } from "@/components/forensics/watchlist-dialog";
+import { TimelineList } from "@/components/forensics/timeline-list";
 import type { FindingItem, ScanLogEntry, StatsData } from "@/lib/types";
 
 const ALL_LANG_VALUE = "all";
@@ -73,6 +80,10 @@ export default function Home() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [bookmarkPendingId, setBookmarkPendingId] = useState<string | null>(null);
 
+  // ---- Görünüm ve izleme ----
+  const [view, setView] = useState<"kart" | "zaman">("kart");
+  const [watchOpenSignal, setWatchOpenSignal] = useState(0);
+
   const loadFindings = useCallback(async () => {
     try {
       const params = new URLSearchParams({
@@ -108,6 +119,20 @@ export default function Home() {
     const t = setTimeout(() => setDebouncedQuery(searchInput.trim()), 400);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // İzleme listesinden arama talebi (kelimeye tıklandığında arşivde arar)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const term = (e as CustomEvent<string>).detail;
+      if (!term) return;
+      setSearchInput(term);
+      setOnlyBookmarked(false);
+      setCategory("all");
+      document.getElementById("bulgu-listesi")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    window.addEventListener("krimiscan:search", handler);
+    return () => window.removeEventListener("krimiscan:search", handler);
+  }, []);
 
   // Filtre/veri değişiminde yükle
   useEffect(() => {
@@ -259,11 +284,30 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-2 text-xs text-slate-400">
-            <ShieldCheck className="h-4 w-4 text-emerald-400" />
-            {lastScanDate
-              ? `Son tarama: ${lastScanDate} · ${lastScan?.languagesCovered ?? 0} dil`
-              : "Henüz tarama yapılmadı"}
+          <div className="flex items-center gap-2">
+            <div className="hidden xl:flex items-center gap-2 text-xs text-slate-400 mr-1">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              {lastScanDate
+                ? `Son tarama: ${lastScanDate} · ${lastScan?.languagesCovered ?? 0} dil`
+                : "Henüz tarama yapılmadı"}
+            </div>
+            <WatchlistDialog openSignal={watchOpenSignal} />
+            <Link
+              href="/analytics"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-300 transition-colors"
+              title="Trend ve analitik paneli"
+            >
+              <BarChart3 className="h-4 w-4" />
+              <span className="hidden lg:inline">Analitik</span>
+            </Link>
+            <Link
+              href="/report"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-300 transition-colors"
+              title="Yazdırılabilir küresel istihbarat raporu"
+            >
+              <FileText className="h-4 w-4" />
+              <span className="hidden lg:inline">Rapor</span>
+            </Link>
           </div>
         </div>
       </header>
@@ -495,7 +539,7 @@ export default function Home() {
         </section>
 
         {/* ================= FİLTRELER ================= */}
-        <section className="space-y-3">
+        <section className="space-y-3" id="bulgu-listesi">
           <div className="flex flex-col md:flex-row gap-3 md:items-center">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
@@ -545,6 +589,35 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Görünüm değiştirici: Kart / Zaman Çizelgesi */}
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">
+              {findings.length > 0 && `${findings.length} bulgu görüntüleniyor`}
+            </p>
+            <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+              <button
+                onClick={() => setView("kart")}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
+                  view === "kart"
+                    ? "bg-amber-500 text-slate-950 font-semibold"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" /> Kart
+              </button>
+              <button
+                onClick={() => setView("zaman")}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
+                  view === "zaman"
+                    ? "bg-amber-500 text-slate-950 font-semibold"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <GitCommitHorizontal className="h-3.5 w-3.5" /> Zaman Çizelgesi
+              </button>
+            </div>
+          </div>
+
           {/* Kategori çipleri */}
           <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
             <button
@@ -580,11 +653,19 @@ export default function Home() {
         {/* ================= BULGU LİSTESİ ================= */}
         <section>
           {loading ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-72 rounded-xl bg-slate-900 border border-slate-800" />
-              ))}
-            </div>
+            view === "kart" ? (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-72 rounded-xl bg-slate-900 border border-slate-800" />
+                ))}
+              </div>
+            ) : (
+              <div className="max-w-3xl mx-auto space-y-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-32 rounded-xl bg-slate-900 border border-slate-800" />
+                ))}
+              </div>
+            )
           ) : findings.length === 0 ? (
             <div className="text-center py-16 space-y-4">
               <div className="mx-auto h-16 w-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
@@ -605,7 +686,7 @@ export default function Home() {
                 <ScanSearch className="h-4 w-4 mr-2" /> İlk Taramayı Başlat
               </Button>
             </div>
-          ) : (
+          ) : view === "kart" ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {findings.map((f, i) => (
                 <FindingCard
@@ -618,6 +699,12 @@ export default function Home() {
                 />
               ))}
             </div>
+          ) : (
+            <TimelineList
+              findings={findings}
+              onDeepDive={openDeepDive}
+              onToggleBookmark={toggleBookmark}
+            />
           )}
         </section>
       </main>

@@ -76,7 +76,7 @@ export async function POST(req: Request) {
     const translated = await translateAndClassifyBatch(candidates, lang);
 
     // 7) Geçerli olanları veritabanına kaydet
-    const savedFindings = [];
+    const savedFindings: Awaited<ReturnType<typeof db.finding.create>>[] = [];
     for (const tr of translated) {
       if (!tr.trTitle || tr.trTitle.length < 5) continue;
 
