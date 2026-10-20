@@ -43,7 +43,7 @@ export function TimelineList({ findings, onDeepDive, onToggleBookmark }: Timelin
 
   if (findings.length === 0) {
     return (
-      <div className="text-center py-12 text-sm text-slate-500">
+      <div className="text-center py-12 text-sm text-slate-400">
         Zaman çizelgesinde gösterilecek bulgu yok.
       </div>
     );
@@ -64,7 +64,7 @@ export function TimelineList({ findings, onDeepDive, onToggleBookmark }: Timelin
               </span>
               <h4 className="text-sm font-bold text-amber-300 uppercase tracking-wider">{label}</h4>
               <div className="flex-1 h-px bg-slate-800" />
-              <span className="text-xs text-slate-500">{items.length} bulgu</span>
+              <span className="text-xs text-slate-400">{items.length} bulgu</span>
             </div>
 
             {/* O günkü bulgular */}
@@ -92,12 +92,12 @@ export function TimelineList({ findings, onDeepDive, onToggleBookmark }: Timelin
                             <Sparkles className="h-3 w-3" /> Yenilik
                           </Badge>
                         )}
-                        <span className="ml-auto flex items-center gap-0.5 text-[11px] text-slate-500">
+                        <span className="ml-auto flex items-center gap-0.5 text-[11px] text-slate-400">
                           {Array.from({ length: 5 }).map((_, si) => (
                             <Star
                               key={si}
                               className={`h-2.5 w-2.5 ${
-                                si < f.importance ? "fill-amber-400 text-amber-400" : "text-slate-700"
+                                si < f.importance ? "fill-amber-400 text-amber-400" : "text-slate-600"
                               }`}
                             />
                           ))}
@@ -116,12 +116,12 @@ export function TimelineList({ findings, onDeepDive, onToggleBookmark }: Timelin
                       </p>
 
                       <div className="flex items-center justify-between gap-2 pt-0.5">
-                        <span className="text-[11px] text-slate-500 flex items-center gap-2 min-w-0">
+                        <span className="text-[11px] text-slate-400 flex items-center gap-2 min-w-0">
                           <span className="flex items-center gap-1 shrink-0">
                             <Globe className="h-3 w-3" />
                             {lang ? `${lang.flag} ${lang.name}` : f.language.toUpperCase()}
                           </span>
-                          <span className="text-slate-700">•</span>
+                          <span className="text-slate-500">•</span>
                           <span className="truncate">{f.sourceName}</span>
                         </span>
                         <div className="flex items-center gap-1.5 shrink-0">

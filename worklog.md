@@ -75,3 +75,22 @@ Stage Summary:
 - Bilinen davranış: web araması soru cümlelerinde 422 dönebilir — asistan arşiv bağlamıyla yanıtlamaya devam eder (zarif düşüş); 24 saatlik bülten önbelleği force ile aşılabilir
 - Toplam uygulama durumu: 5 sayfa (/, /analytics, /report, /assistant, /briefing), 11 API rotası, 178 bulgu arşivi
 
+---
+Task ID: 4
+Agent: main-agent (Z.ai)
+Task: "Bazı kısımlar arka plan rengi yüzünden okunmuyor" — tüm arayüzde kontrast/okunabilirlik düzeltmesi
+
+Work Log:
+- KÖK NEDEN: html elementinde dark sınıfı yoktu; uygulama elle slate-950 koyu tema sınıflarıyla yapılmıştı ama shadcn bileşenleri (Select, DropdownMenu, Dialog, Sheet, Toast) AÇIK tema token'larını kullanıyordu. Sonuç: Select açılır menülerinde koyu lacivert zemin üzerinde neredeyse siyah seçenek metni (okunmaz), diyalog kapatma X düğmeleri görünmez, toast beyaz kalıyordu.
+- src/app/layout.tsx: <html> elementine className="dark" eklendi → tüm shadcn token bileşenleri koyu palete geçti
+- src/app/globals.css: .dark token seti adli tema paletine göre yeniden yazıldı (popover/card: slate-900 + slate-100 metin, muted-foreground: slate-400, accent: slate-800, primary: amber-500 + slate-950 metin, border/input/ring slate/amber)
+- Koyu zeminlerde düşük kontrastlı metinler yükseltildi: text-slate-500→400 (etiketler/meta), text-slate-600→400/500 (placeholder'lar, ikonlar), text-slate-700→500/600 (ayraç •, boş yıldızlar) — page.tsx, finding-card, timeline-list, watchlist-dialog, note-dialog, briefing, assistant, analytics
+- analytics/page.tsx: recharts eksen tik renkleri #64748b → #94a3b8 (5 yer)
+- Rapor sayfası (açık zemin) ters yönde düzeltildi: text-slate-400/500 → 600 (künye, istatistik etiketleri, bulgu meta, yasal not), boş yıldız slate-300→400
+- Doğrulama (Agent Browser): Select dropdown açık → seçenek metni lab(96) açık renk / zemin lab(8) koyu (hesaplanmış stil ile teyit); İzleme diyaloğu + X düğmesi görünür; Dışa Aktar menüsü koyu/açık okunur; ana sayfa, /report, /analytics ekran görüntüleri temiz; konsol hatası yok
+- Ekran görüntüleri: download/kontrast-kontrol/01-06 PNG
+
+Stage Summary:
+- Kontrast sorunu kökten çözüldü: shadcn bileşenleri artık koyu token'larla render oluyor; tüm sayfalarda AA düzeyinde okunabilirlik sağlandı
+- Değişen dosyalar: layout.tsx, globals.css, page.tsx, analytics/report/briefing/assistant page'leri, finding-card, timeline-list, watchlist-dialog, note-dialog
+- Rapor sayfasının açık A4 teması ve baskı stilleri korundu

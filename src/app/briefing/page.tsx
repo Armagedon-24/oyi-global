@@ -114,7 +114,7 @@ export default function BriefingPage() {
               <h1 className="font-bold text-base leading-tight tracking-tight">
                 AI İstihbarat Bülteni
               </h1>
-              <p className="text-[11px] text-slate-500 truncate">
+              <p className="text-[11px] text-slate-400 truncate">
                 Arşiv bulgularından LLM sentezli dönem raporu
               </p>
             </div>
@@ -194,11 +194,11 @@ export default function BriefingPage() {
         ) : !briefing ? (
           <div className="text-center py-20 space-y-4">
             <div className="mx-auto h-16 w-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
-              <Newspaper className="h-8 w-8 text-slate-600" />
+              <Newspaper className="h-8 w-8 text-slate-500" />
             </div>
             <div className="space-y-1.5">
               <h3 className="font-semibold text-lg text-slate-200">Henüz bülten üretilmedi</h3>
-              <p className="text-sm text-slate-500 max-w-lg mx-auto leading-relaxed">
+              <p className="text-sm text-slate-400 max-w-lg mx-auto leading-relaxed">
                 Yapay zekâ, arşivinizdeki en önemli bulguları inceleyerek yönetici özeti, öne çıkan
                 gelişmeler, yükselen teknolojiler ve bölgesel görünüm içeren profesyonel bir Türkçe
                 istihbarat bülteni hazırlar.
@@ -292,8 +292,8 @@ export default function BriefingPage() {
             </div>
 
             {/* Alt not */}
-            <div className="print:hidden flex items-start gap-2.5 p-4 rounded-xl border border-slate-800 bg-slate-900/40 text-xs text-slate-500 leading-relaxed">
-              <Info className="h-4 w-4 shrink-0 mt-0.5 text-slate-500" />
+            <div className="print:hidden flex items-start gap-2.5 p-4 rounded-xl border border-slate-800 bg-slate-900/40 text-xs text-slate-400 leading-relaxed">
+              <Info className="h-4 w-4 shrink-0 mt-0.5 text-slate-400" />
               <p>
                 Bu bülten yapay zekâ tarafından arşiv bulgularından sentezlenmiştir; [B#n] atıfları
                 arşiv sıralamasını gösterir. Kritik işlemlerde orijinal kaynakları ve derin analiz
@@ -306,7 +306,7 @@ export default function BriefingPage() {
 
       {/* FOOTER */}
       <footer className="print:hidden mt-auto border-t border-slate-800/80 bg-slate-950">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between text-xs text-slate-500">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between text-xs text-slate-400">
           <p className="flex items-center gap-1.5">
             <Fingerprint className="h-3.5 w-3.5 text-amber-500/70" />
             KrimiScan Global

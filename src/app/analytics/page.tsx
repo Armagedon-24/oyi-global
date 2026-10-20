@@ -101,7 +101,7 @@ export default function AnalyticsPage() {
               <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight">
                 Trend & Analitik <span className="text-amber-400">Paneli</span>
               </h1>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-400">
                 Küresel bulgu arşivinin istatistiksel ve trend analizi
               </p>
             </div>
@@ -122,10 +122,10 @@ export default function AnalyticsPage() {
         ) : !data || data.total === 0 ? (
           <div className="text-center py-24 space-y-4">
             <div className="mx-auto h-16 w-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
-              <BarChart3 className="h-8 w-8 text-slate-600" />
+              <BarChart3 className="h-8 w-8 text-slate-500" />
             </div>
             <h3 className="font-semibold text-slate-200">Analiz için veri yok</h3>
-            <p className="text-sm text-slate-500 max-w-md mx-auto">
+            <p className="text-sm text-slate-400 max-w-md mx-auto">
               Önce ana panelde küresel tarama çalıştırın; bulgular biriktikçe bu panelde trend
               grafikleri oluşacaktır.
             </p>
@@ -159,7 +159,7 @@ export default function AnalyticsPage() {
                       </div>
                       <div className="min-w-0">
                         <p className="text-xl font-bold leading-none truncate">{s.value}</p>
-                        <p className="text-[11px] text-slate-500 mt-1">{s.label}</p>
+                        <p className="text-[11px] text-slate-400 mt-1">{s.label}</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -188,8 +188,8 @@ export default function AnalyticsPage() {
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                        <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={{ stroke: "#334155" }} tickLine={false} />
-                        <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={{ stroke: "#334155" }} tickLine={false} />
+                        <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                         <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: "#94a3b8" }} />
                         <Area type="monotone" dataKey="count" name="Toplam" stroke={AMBER} strokeWidth={2} fill="url(#gTotal)" />
                         <Area type="monotone" dataKey="newTech" name="Yenilik" stroke={EMERALD} strokeWidth={2} fill="url(#gNew)" />
@@ -212,7 +212,7 @@ export default function AnalyticsPage() {
                         margin={{ top: 0, right: 12, left: 8, bottom: 0 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
-                        <XAxis type="number" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                         <YAxis
                           type="category"
                           dataKey="name"
@@ -241,8 +241,8 @@ export default function AnalyticsPage() {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={data.languages.map((l) => ({ name: getLanguage(l.code)?.name ?? l.code.toUpperCase(), count: l.count }))} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                        <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={{ stroke: "#334155" }} tickLine={false} interval={0} angle={-35} textAnchor="end" height={58} />
-                        <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={{ stroke: "#334155" }} tickLine={false} interval={0} angle={-35} textAnchor="end" height={58} />
+                        <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                         <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(167,139,250,0.06)" }} />
                         <Bar dataKey="count" name="Bulgu" fill={PURPLE} radius={[4, 4, 0, 0]} barSize={22} />
                       </BarChart>
@@ -336,7 +336,7 @@ export default function AnalyticsPage() {
                       </motion.span>
                     ))}
                   </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
                     Bu kelimeler arşivdeki tüm bulgulardan otomatik çıkarılır; en üstteki terimler
                     alandaki güncel tartışma başlıklarını gösterir.
                   </p>

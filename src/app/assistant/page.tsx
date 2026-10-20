@@ -137,7 +137,7 @@ export default function AssistantPage() {
               <h1 className="font-bold text-base leading-tight tracking-tight">
                 AI İstihbarat Asistanı
               </h1>
-              <p className="text-[11px] text-slate-500 truncate">
+              <p className="text-[11px] text-slate-400 truncate">
                 Arşiv bağlamlı soru-cevap · Türkçe yanıt garantisi
               </p>
             </div>
@@ -284,7 +284,7 @@ export default function AssistantPage() {
               }}
               placeholder="Sorunuzu yazın… (Enter ile gönder, Shift+Enter yeni satır)"
               rows={1}
-              className="min-h-[44px] max-h-32 resize-none bg-slate-900 border-slate-700 text-sm placeholder:text-slate-600"
+              className="min-h-[44px] max-h-32 resize-none bg-slate-900 border-slate-700 text-sm placeholder:text-slate-400"
             />
             <Button
               onClick={() => send(input)}
@@ -299,7 +299,7 @@ export default function AssistantPage() {
               <span className="sr-only">Gönder</span>
             </Button>
           </div>
-          <p className="flex items-center gap-1.5 text-[11px] text-slate-600 mt-2">
+          <p className="flex items-center gap-1.5 text-[11px] text-slate-400 mt-2">
             <Globe2 className="h-3 w-3" />
             Yanıtlar arşivdeki Türkçeleştirilmiş bulgular ve güncel web kaynaklarıyla desteklenir;
             kritik kararlarda kaynakları doğrulayın.

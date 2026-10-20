@@ -167,12 +167,12 @@ export function WatchlistDialog({ onChanged, openSignal }: WatchlistDialogProps)
         <ScrollArea className="h-64 -mx-2 px-2">
           {loading ? (
             <div className="flex justify-center py-8">
-              <Loader2 className="h-5 w-5 text-slate-500 animate-spin" />
+              <Loader2 className="h-5 w-5 text-slate-400 animate-spin" />
             </div>
           ) : items.length === 0 ? (
             <div className="text-center py-10 space-y-2">
-              <CircleAlert className="h-8 w-8 text-slate-600 mx-auto" />
-              <p className="text-sm text-slate-500">
+              <CircleAlert className="h-8 w-8 text-slate-500 mx-auto" />
+              <p className="text-sm text-slate-400">
                 Henüz izlenen kelime yok. Örneğin{" "}
                 <button
                   className="text-amber-300 underline underline-offset-2"
@@ -192,7 +192,7 @@ export function WatchlistDialog({ onChanged, openSignal }: WatchlistDialogProps)
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-100 truncate">{item.term}</p>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[11px] text-slate-400">
                       {item.matchCount > 0
                         ? `Arşivde ${item.matchCount} eşleşme bulundu`
                         : "Henüz eşleşme yok"}

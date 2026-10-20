@@ -346,7 +346,7 @@ export default function Home() {
               <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight">
                 KrimiScan <span className="text-amber-400">Global</span>
               </h1>
-              <p className="text-[11px] text-slate-500 truncate">
+              <p className="text-[11px] text-slate-400 truncate">
                 Olay Yeri İnceleme Teknikleri Küresel İzleme Merkezi
               </p>
             </div>
@@ -522,11 +522,11 @@ export default function Home() {
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-center">
                       <p className="text-xl font-bold text-amber-400">{sessionAdded}</p>
-                      <p className="text-[11px] text-slate-500">eklenen bulgu</p>
+                      <p className="text-[11px] text-slate-400">eklenen bulgu</p>
                     </div>
                     <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-center">
                       <p className="text-xl font-bold text-emerald-400">{doneLangs}</p>
-                      <p className="text-[11px] text-slate-500">tamamlanan dil</p>
+                      <p className="text-[11px] text-slate-400">tamamlanan dil</p>
                     </div>
                   </div>
                 </CardContent>
@@ -614,7 +614,7 @@ export default function Home() {
                 </div>
                 <div>
                   <p className="text-xl font-bold leading-none">{s.value}</p>
-                  <p className="text-[11px] text-slate-500 mt-1">{s.label}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{s.label}</p>
                 </div>
               </CardContent>
             </Card>
@@ -630,7 +630,7 @@ export default function Home() {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Bulgularda ara (Türkçe başlık, özet, anahtar kelime)…"
-                className="pl-9 bg-slate-900 border-slate-700 text-sm placeholder:text-slate-600"
+                className="pl-9 bg-slate-900 border-slate-700 text-sm placeholder:text-slate-400"
               />
             </div>
             <div className="flex gap-2">
@@ -715,7 +715,7 @@ export default function Home() {
 
           {/* Görünüm değiştirici: Kart / Zaman Çizelgesi */}
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-400">
               {findings.length > 0 && `${findings.length} bulgu görüntüleniyor`}
             </p>
             <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
@@ -793,11 +793,11 @@ export default function Home() {
           ) : findings.length === 0 ? (
             <div className="text-center py-16 space-y-4">
               <div className="mx-auto h-16 w-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
-                <Fingerprint className="h-8 w-8 text-slate-600" />
+                <Fingerprint className="h-8 w-8 text-slate-500" />
               </div>
               <div className="space-y-1.5">
                 <h3 className="font-semibold text-slate-200">Henüz bulgu yok</h3>
-                <p className="text-sm text-slate-500 max-w-md mx-auto">
+                <p className="text-sm text-slate-400 max-w-md mx-auto">
                   Küresel taramayı başlatın; {SCAN_LANGUAGES.length} dildeki kaynaklardan olay yeri
                   inceleme gelişmeleri toplansın ve Türkçe olarak bu panelde listelensin.
                 </p>
@@ -841,7 +841,7 @@ export default function Home() {
 
       {/* ================= FOOTER ================= */}
       <footer className="mt-auto border-t border-slate-800/80 bg-slate-950">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
           <p className="flex items-center gap-1.5">
             <Fingerprint className="h-3.5 w-3.5 text-amber-500/70" />
             KrimiScan Global — adli bilimler gelişmelerini dünya dillerinden Türkçeye taşıyan

@@ -126,14 +126,14 @@ export function FindingCard({
 
           {/* Önem puanı */}
           <div className="flex items-center gap-1 pt-0.5" title={`Önem puanı: ${finding.importance}/5`}>
-            <span className="text-[11px] text-slate-500 mr-1">Önem:</span>
+            <span className="text-[11px] text-slate-400 mr-1">Önem:</span>
             {Array.from({ length: 5 }).map((_, i) => (
               <Star
                 key={i}
                 className={`h-3 w-3 ${
                   i < finding.importance
                     ? "fill-amber-400 text-amber-400"
-                    : "text-slate-700"
+                    : "text-slate-600"
                 }`}
               />
             ))}
@@ -142,13 +142,13 @@ export function FindingCard({
 
         <CardFooter className="p-4 pt-0 flex flex-col gap-3">
           {/* Meta bilgisi */}
-          <div className="w-full flex items-center justify-between text-[11px] text-slate-500">
+          <div className="w-full flex items-center justify-between text-[11px] text-slate-400">
             <div className="flex items-center gap-2 min-w-0">
               <span className="flex items-center gap-1 shrink-0">
                 <Globe className="h-3 w-3" />
                 {langInfo ? `${langInfo.flag} ${langInfo.name}` : finding.language.toUpperCase()}
               </span>
-              <span className="text-slate-700">•</span>
+              <span className="text-slate-500">•</span>
               <span className="truncate">{finding.sourceName}</span>
             </div>
             {date && <span className="shrink-0">{date}</span>}

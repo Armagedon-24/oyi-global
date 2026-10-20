@@ -84,12 +84,12 @@ export function NoteDialog({ finding, open, onOpenChange, onSave }: NoteDialogPr
           placeholder="Bu bulgu hakkındaki değerlendirmeniz, vaka bağlantısı, eylem maddesi…"
           rows={6}
           maxLength={4000}
-          className="bg-slate-950 border-slate-700 text-sm placeholder:text-slate-600 resize-none"
+          className="bg-slate-950 border-slate-700 text-sm placeholder:text-slate-400 resize-none"
         />
 
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <span className="text-[11px] text-slate-500">{len}/4000</span>
+            <span className="text-[11px] text-slate-400">{len}/4000</span>
             {finding.notes && !saving && (
               <Button
                 variant="ghost"

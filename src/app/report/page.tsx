@@ -65,12 +65,12 @@ export default async function ReportPage() {
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight leading-tight">
                   KRİMİSCAN <span className="text-amber-600">GLOBAL</span>
                 </h1>
-                <p className="text-xs text-slate-500 font-medium uppercase tracking-widest">
+                <p className="text-xs text-slate-600 font-medium uppercase tracking-widest">
                   Olay Yeri İnceleme Teknikleri Küresel İzleme Merkezi
                 </p>
               </div>
             </div>
-            <div className="text-right text-[11px] text-slate-500 leading-relaxed shrink-0">
+            <div className="text-right text-[11px] text-slate-600 leading-relaxed shrink-0">
               <p className="font-bold text-slate-700">RAPOR NO</p>
               <p className="font-mono">{reportNo}</p>
               <p className="mt-1 font-bold text-slate-700">TARİH</p>
@@ -81,7 +81,7 @@ export default async function ReportPage() {
             Küresel İstihbarat Raporu — Dünyada Olay Yeri İnceleme Tekniklerindeki
             Güncel Gelişmeler ve Yenilikler
           </h2>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-600">
             14 kaynak dilde taranan uluslararası kaynaklardan derlenmiş, yapay zekâ destekli
             Türkçe çeviri ve uzman sınıflandırma içeren periyodik değerlendirme raporu
           </p>
@@ -114,7 +114,7 @@ export default async function ReportPage() {
             ].map((s) => (
               <div key={s.label} className="border border-slate-200 rounded-lg p-3 text-center bg-slate-50">
                 <p className="text-xl font-black text-slate-800">{s.value}</p>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</p>
+                <p className="text-[10px] uppercase tracking-wider text-slate-600 mt-0.5">{s.label}</p>
               </div>
             ))}
           </div>
@@ -146,7 +146,7 @@ export default async function ReportPage() {
           <h3 className="text-sm font-black uppercase tracking-widest text-amber-700 mb-2">
             3. Öne Çıkan Bulgular (Önem Sırasına Göre)
           </h3>
-          <p className="text-xs text-slate-500 mb-5">
+          <p className="text-xs text-slate-600 mb-5">
             Yapay zekâ motoru tarafından 1-5 arası önem puanlanan bulgulardan en yüksek
             puanlı {topFindings.length} kayıt aşağıda listelenmiştir.
           </p>
@@ -177,11 +177,11 @@ export default async function ReportPage() {
                             Yenilik
                           </span>
                         )}
-                        <span className="text-[11px] text-slate-400 flex items-center gap-0.5">
+                        <span className="text-[11px] text-slate-600 flex items-center gap-0.5">
                           {Array.from({ length: 5 }).map((_, si) => (
                             <Star
                               key={si}
-                              className={`h-2.5 w-2.5 ${si < f.importance ? "fill-amber-500 text-amber-500" : "text-slate-300"}`}
+                              className={`h-2.5 w-2.5 ${si < f.importance ? "fill-amber-500 text-amber-500" : "text-slate-400"}`}
                             />
                           ))}
                         </span>
@@ -190,7 +190,7 @@ export default async function ReportPage() {
                       <p className="mt-1.5 text-xs leading-relaxed text-slate-600 text-justify">
                         {f.trSummary}
                       </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-600">
                         <span>
                           {lang ? `${lang.flag} ${lang.name}` : f.language.toUpperCase()} · {f.sourceName}
                         </span>
@@ -207,7 +207,7 @@ export default async function ReportPage() {
 
         {/* Kapanış / yasal not */}
         <div className="px-8 sm:px-12 py-6 border-t-4 border-amber-500 bg-slate-50 rounded-b-lg print:rounded-b-none">
-          <p className="text-[10px] leading-relaxed text-slate-500 text-justify">
+          <p className="text-[10px] leading-relaxed text-slate-600 text-justify">
             <strong className="text-slate-600">Yöntem ve Kapsam Notu:</strong> Bu rapor; İngilizce,
             Çince, Almanca, Fransızca, İspanyolca, İtalyanca, Portekizce, Rusça, Japonca, Korece,
             Arapça, Felemenkçe, Lehçe ve Türkçe dillerinde gerçekleştirilen otomatik kaynak
