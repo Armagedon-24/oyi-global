@@ -134,3 +134,24 @@ Stage Summary:
 - Boş ekran sorunu çözüldü: uygulama sunucusu kalıcı olarak geri getirildi (setsid -f), tüm 5 sayfa + API'ler + görsel proxy sağlıklı
 - Gelecek tekrarını önlemek için tüm doğrulama scriptleri güvenli hale getirildi (pkill yasaklandı, koşullu başlatma)
 - Not: Konteyner yeniden başlatılırsa /start.sh → .zscripts/dev.sh akışı her şeyi otomatik geri yükler (repo.tar + db + sunucu)
+
+---
+Task ID: 7
+Agent: main-agent (Z.ai)
+Task: "Bu uygulamayı dergi gibi tasarla, konularda dergi sayfalarındaymış gibi görünsün, sayfa geçişlerinde sayfa çevrilme animasyonu olsun" — E-Dergi tasarımı ve 3D sayfa çevirme animasyonu
+
+Work Log:
+- globals.css: dergi tasarım sistemi eklendi — krem kâğıt dokusu (.mag-page: çok katmanlı gradient + kıyı gölgeleri), serif tipografi (.mag-serif: Georgia/Playfair stack), 3D sahne (.mag-frame: perspective 2400px), çevrilen yaprak (.mag-leaf + leaf-next/leaf-prev keyframes: rotateY 0→-180/-180→0, transform-origin left, preserve-3d, backface-visibility hidden), yaprak ön/arka yüz gölgeleri, sahne altı yumuşak gölge (.mag-underglow), iki kolon baskı düzeni (.mag-cols: column-rule + justify + hyphens), baş harf süsü (.mag-dropcap), dergi kicker/tag stilleri, prefers-reduced-motion desteği
+- src/components/forensics/magazine-view.tsx (yeni, ~560 satır): E-Dergi okuyucu bileşeni
+  - Sayfa modeli: Kapak (manşet "KRİMİSCAN GLOBAL", sayı no/ay/yıl, "n konu tarandı", kapak haberi görseli + 3 yan başlık şeridi) → İçindekiler (numaralı kayıtlar, noktalı ayraçlar, folio numaraları, tıklayınca sayfaya atlama, künye kutusu) → 12 makale sayfası (üst şerit, kicker + Yenilik + önem yıldızları, serif başlık, kaynak/dil/tarih/künye satırı, kapak görseli + italik figcaption, 2 kolonlu drop cap'li gövde, baskı sonu işareti ◆, anahtar kavramlar, Okur Notu kutusu, Derin Analiz/İşaretle/Kaynak butonları)
+  - Sayfa çevirme motoru: goTo() state makinesi (flip: {dir, from, to}), çevirme sırasında altta hedef sayfa + üstte dönen yaprak; yön bazlı içerik seçimi (next: altta hedef/yaprakta kaynak; prev: tersi); 980ms sonra commit; klavye ← → (form alanları hariç), dokunmatik kaydırma (±48px eşik), kenar tıklama bölgeleri (sol/sağ %8, alt %18 boş bırakılır ki butonlar tıklanabilsin), alt ilerleme çubuğu + sayfa sayacı, sayfa etiketi (Kapak/İçindekiler/Sayfa n)
+  - Boş sayı ve yükleme durumları da dergi sayfası olarak tasarlandı
+- src/app/page.tsx: görünüm sistemi "dergi | kart | zaman" olarak genişletildi, "dergi" varsayılan; görünüm değiştiriciye Dergi sekmesi (BookOpen); header masthead'e dönüştü (serif logo + E-DERGİ rozeti + "Küresel İzleme Dergisi" alt başlığı); footer e-dergi metni; filtre satırına flex-wrap (mobil taşma giderildi)
+- KRİTİK SORUN ve ÇÖZÜM: İlk doğrulamada çevirme sonrası sayfaların kâğıt zemini kayıyordu — teşhis: çalışan dev server (pid 1059) globals.css'teki yeni kuralları derlememiş, bayat CSS chunk sunuyordu (computed background: none). scripts/restart-server.sh ile sunucu setsid ile temiz yeniden başlatıldı; CSS chunk'ta mag-page:4, mag-leaf:9, keyframes:2 doğrulandı. Öğrenilen ders: CSS değişikliklerinden sonra sunucu yeniden başlatılmalı/derlenen chunk grep'lenmeli
+- Doğrulama (agent-browser): masaüstü 1440px — kapak/içindekiler/makale sayfaları krem kâğıt üzerinde kusursuz; ileri + geri çevirme animasyonu 3D perspektifle ekran görüntüsünde yakalandı; içindekilerden sayfa atlama; yer imi İşaretli durumuna geçti; derin analiz paneli dergi üstünde açıldı (galeri görselleriyle); klavye ok tuşları; drop cap + 2 kolon; konsol hatası yok. Mobil 390px — sayfa tam genişlik, yatay taşma GİDERİLDİ (scrollW 390=390)
+- Ekran görüntüleri: download/dergi-kontrol/01-17 PNG (kapak, çevirme ortası, içindekiler, makale drop cap, mobil kapak/içindekiler, geri çevirme)
+
+Stage Summary:
+- Uygulama ana deneyimi artık E-Dergi: bulgular dergi sayfalarında (Kapak → İçindekiler → 12 makale), sayfa geçişlerinde 3D sayfa çevirme animasyonu (klavye/dokunma/kenar tıklama/ok butonları)
+- Tüm işlevler korundu: derin analiz + görsel galerisi, yer imi, okundu, notlar, filtreler, arama, tarama paneli; Kart ve Zaman Çizelgesi görünümleri alternatif olarak duruyor
+- Değişen dosyalar: globals.css, magazine-view.tsx (yeni), page.tsx; scripts/restart-server.sh (yeni), scripts/verify-magazine.sh + verify-magazine2.sh (yeni)

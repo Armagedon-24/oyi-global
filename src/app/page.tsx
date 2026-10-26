@@ -50,9 +50,11 @@ import {
   FileJson,
   FileSpreadsheet,
   CheckCircle2,
+  BookOpen,
 } from "lucide-react";
 import { CATEGORIES, SCAN_LANGUAGES, categoryLabel } from "@/lib/forensics-config";
 import { FindingCard } from "@/components/forensics/finding-card";
+import { MagazineView } from "@/components/forensics/magazine-view";
 import { DeepDiveSheet } from "@/components/forensics/deep-dive-sheet";
 import { WatchlistDialog } from "@/components/forensics/watchlist-dialog";
 import { TimelineList } from "@/components/forensics/timeline-list";
@@ -100,7 +102,7 @@ export default function Home() {
   const [noteOpen, setNoteOpen] = useState(false);
 
   // ---- Görünüm ve izleme ----
-  const [view, setView] = useState<"kart" | "zaman">("kart");
+  const [view, setView] = useState<"dergi" | "kart" | "zaman">("dergi");
   const [watchOpenSignal, setWatchOpenSignal] = useState(0);
 
   const loadFindings = useCallback(async () => {
@@ -343,11 +345,12 @@ export default function Home() {
               <Fingerprint className="h-5 w-5 text-amber-400" />
             </div>
             <div className="min-w-0">
-              <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight">
+              <h1 className="mag-serif font-black text-base sm:text-lg leading-tight tracking-tight">
                 KrimiScan <span className="text-amber-400">Global</span>
+                <span className="ml-2 hidden sm:inline align-middle rounded-sm border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.18em] text-amber-300">E-Dergi</span>
               </h1>
               <p className="text-[11px] text-slate-400 truncate">
-                Olay Yeri İnceleme Teknikleri Küresel İzleme Merkezi
+                Olay Yeri İnceleme Teknikleri — Küresel İzleme Dergisi
               </p>
             </div>
           </div>
@@ -633,7 +636,7 @@ export default function Home() {
                 className="pl-9 bg-slate-900 border-slate-700 text-sm placeholder:text-slate-400"
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Select value={language} onValueChange={setLanguage}>
                 <SelectTrigger className="w-full sm:w-44 bg-slate-900 border-slate-700 text-sm">
                   <SelectValue />
@@ -713,12 +716,22 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Görünüm değiştirici: Kart / Zaman Çizelgesi */}
+          {/* Görünüm değiştirici: Dergi / Kart / Zaman Çizelgesi */}
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-slate-400">
               {findings.length > 0 && `${findings.length} bulgu görüntüleniyor`}
             </p>
             <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+              <button
+                onClick={() => setView("dergi")}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
+                  view === "dergi"
+                    ? "bg-amber-500 text-slate-950 font-semibold"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <BookOpen className="h-3.5 w-3.5" /> Dergi
+              </button>
               <button
                 onClick={() => setView("kart")}
                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
@@ -776,7 +789,16 @@ export default function Home() {
 
         {/* ================= BULGU LİSTESİ ================= */}
         <section>
-          {loading ? (
+          {view === "dergi" ? (
+            <MagazineView
+              findings={findings}
+              loading={loading}
+              scanning={scanning}
+              onStartScan={startScan}
+              onDeepDive={openDeepDive}
+              onToggleBookmark={toggleBookmark}
+            />
+          ) : loading ? (
             view === "kart" ? (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -844,8 +866,8 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
           <p className="flex items-center gap-1.5">
             <Fingerprint className="h-3.5 w-3.5 text-amber-500/70" />
-            KrimiScan Global — adli bilimler gelişmelerini dünya dillerinden Türkçeye taşıyan
-            profesyonel izleme sistemi
+            KrimiScan Global E-Dergi — adli bilimler gelişmelerini dünya dillerinden Türkçeye
+            taşıyan dijital baskı
           </p>
           <p className="flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5" />

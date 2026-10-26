@@ -1,0 +1,870 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useCallback, useEffect, useRef, useState } from "react";
+     4→     4→import Link from "next/link";
+     5→     5→import { motion } from "framer-motion";
+     6→     6→import { Button } from "@/components/ui/button";
+     7→     7→import { Card, CardContent } from "@/components/ui/card";
+     8→     8→import { Input } from "@/components/ui/input";
+     9→     9→import { Badge } from "@/components/ui/badge";
+    10→    10→import { Progress } from "@/components/ui/progress";
+    11→    11→import { ScrollArea } from "@/components/ui/scroll-area";
+    12→    12→import { Skeleton } from "@/components/ui/skeleton";
+    13→    13→import {
+    14→    14→  Select,
+    15→    15→  SelectContent,
+    16→    16→  SelectItem,
+    17→    17→  SelectTrigger,
+    18→    18→  SelectValue,
+    19→    19→} from "@/components/ui/select";
+    20→    20→import { useToast } from "@/hooks/use-toast";
+    21→    21→import {
+    22→    22→  DropdownMenu,
+    23→    23→  DropdownMenuContent,
+    24→    24→  DropdownMenuItem,
+    25→    25→  DropdownMenuTrigger,
+    26→    26→} from "@/components/ui/dropdown-menu";
+    27→    27→import {
+    28→    28→  Fingerprint,
+    29→    29→  Radar,
+    30→    30→  Radar as RadarIcon,
+    31→    31→  Search,
+    32→    32→  Globe2,
+    33→    33→  Languages,
+    34→    34→  Database,
+    35→    35→  Bookmark,
+    36→    36→  Sparkles,
+    37→    37→  Clock,
+    38→    38→  ScanSearch,
+    39→    39→  CircleCheck,
+    40→    40→  CircleAlert,
+    41→    41→  Loader2,
+    42→    42→  ShieldCheck,
+    43→    43→  BarChart3,
+    44→    44→  FileText,
+    45→    45→  LayoutGrid,
+    46→    46→  GitCommitHorizontal,
+    47→    47→  Bot,
+    48→    48→  Newspaper,
+    49→    49→  Download,
+    50→    50→  FileJson,
+    51→    51→  FileSpreadsheet,
+    52→    52→  CheckCircle2,
+    53→    53→} from "lucide-react";
+    54→    54→import { CATEGORIES, SCAN_LANGUAGES, categoryLabel } from "@/lib/forensics-config";
+    55→    55→import { FindingCard } from "@/components/forensics/finding-card";
+    56→    56→import { DeepDiveSheet } from "@/components/forensics/deep-dive-sheet";
+    57→    57→import { WatchlistDialog } from "@/components/forensics/watchlist-dialog";
+    58→    58→import { TimelineList } from "@/components/forensics/timeline-list";
+    59→    59→import { NoteDialog } from "@/components/forensics/note-dialog";
+    60→    60→import type { FindingItem, ScanLogEntry, StatsData } from "@/lib/types";
+    61→    61→
+    62→    62→const ALL_LANG_VALUE = "all";
+    63→    63→
+    64→    64→export default function Home() {
+    65→    65→  const { toast } = useToast();
+    66→    66→
+    67→    67→  // ---- Veri durumu ----
+    68→    68→  const [findings, setFindings] = useState<FindingItem[]>([]);
+    69→    69→  const [stats, setStats] = useState<StatsData | null>(null);
+    70→    70→  const [loading, setLoading] = useState(true);
+    71→    71→
+    72→    72→  // ---- Filtre durumu ----
+    73→    73→  const [category, setCategory] = useState<string>("all");
+    74→    74→  const [language, setLanguage] = useState<string>(ALL_LANG_VALUE);
+    75→    75→  const [searchInput, setSearchInput] = useState("");
+    76→    76→  const [debouncedQuery, setDebouncedQuery] = useState("");
+    77→    77→  const [sort, setSort] = useState<string>("recent");
+    78→    78→  const [onlyBookmarked, setOnlyBookmarked] = useState(false);
+    79→    79→  const [onlyUnread, setOnlyUnread] = useState(false);
+    80→    80→
+    81→    81→  // ---- Tarama durumu ----
+    82→    82→  const [scanning, setScanning] = useState(false);
+    83→    83→  const [scope, setScope] = useState<string>("all");
+    84→    84→  const [focusCategory, setFocusCategory] = useState<string>("all");
+    85→    85→  const [totalLangs, setTotalLangs] = useState(0);
+    86→    86→  const [doneLangs, setDoneLangs] = useState(0);
+    87→    87→  const [currentLang, setCurrentLang] = useState<{ flag: string; name: string } | null>(null);
+    88→    88→  const [log, setLog] = useState<ScanLogEntry[]>([]);
+    89→    89→  const [sessionAdded, setSessionAdded] = useState(0);
+    90→    90→  const scanSectionRef = useRef<HTMLDivElement>(null);
+    91→    91→
+    92→    92→  // ---- Derin analiz ----
+    93→    93→  const [activeFinding, setActiveFinding] = useState<FindingItem | null>(null);
+    94→    94→  const [sheetOpen, setSheetOpen] = useState(false);
+    95→    95→  const [bookmarkPendingId, setBookmarkPendingId] = useState<string | null>(null);
+    96→    96→
+    97→    97→  // ---- Okundu / not ----
+    98→    98→  const [readPendingId, setReadPendingId] = useState<string | null>(null);
+    99→    99→  const [noteFinding, setNoteFinding] = useState<FindingItem | null>(null);
+   100→   100→  const [noteOpen, setNoteOpen] = useState(false);
+   101→   101→
+   102→   102→  // ---- Görünüm ve izleme ----
+   103→   103→  const [view, setView] = useState<"kart" | "zaman">("kart");
+   104→   104→  const [watchOpenSignal, setWatchOpenSignal] = useState(0);
+   105→   105→
+   106→   106→  const loadFindings = useCallback(async () => {
+   107→   107→    try {
+   108→   108→      const params = new URLSearchParams({
+   109→   109→        category,
+   110→   110→        language,
+   111→   111→        q: debouncedQuery,
+   112→   112→        sort,
+   113→   113→        bookmarked: onlyBookmarked ? "1" : "0",
+   114→   114→        unread: onlyUnread ? "1" : "0",
+   115→   115→        limit: "120",
+   116→   116→      });
+   117→   117→      const res = await fetch(`/api/findings?${params}`);
+   118→   118→      const data = await res.json();
+   119→   119→      if (data.success) setFindings(data.findings);
+   120→   120→    } catch {
+   121→   121→      // sessizce geç
+   122→   122→    } finally {
+   123→   123→      setLoading(false);
+   124→   124→    }
+   125→   125→  }, [category, language, debouncedQuery, sort, onlyBookmarked, onlyUnread]);
+   126→   126→
+   127→   127→  const loadStats = useCallback(async () => {
+   128→   128→    try {
+   129→   129→      const res = await fetch("/api/stats");
+   130→   130→      const data = await res.json();
+   131→   131→      if (data.success) setStats(data.stats);
+   132→   132→    } catch {
+   133→   133→      // sessizce geç
+   134→   134→    }
+   135→   135→  }, []);
+   136→   136→
+   137→   137→  // Arama girdisi debounce
+   138→   138→  useEffect(() => {
+   139→   139→    const t = setTimeout(() => setDebouncedQuery(searchInput.trim()), 400);
+   140→   140→    return () => clearTimeout(t);
+   141→   141→  }, [searchInput]);
+   142→   142→
+   143→   143→  // İzleme listesinden arama talebi (kelimeye tıklandığında arşivde arar)
+   144→   144→  useEffect(() => {
+   145→   145→    const handler = (e: Event) => {
+   146→   146→      const term = (e as CustomEvent<string>).detail;
+   147→   147→      if (!term) return;
+   148→   148→      setSearchInput(term);
+   149→   149→      setOnlyBookmarked(false);
+   150→   150→      setOnlyUnread(false);
+   151→   151→      setCategory("all");
+   152→   152→      document.getElementById("bulgu-listesi")?.scrollIntoView({ behavior: "smooth", block: "start" });
+   153→   153→    };
+   154→   154→    window.addEventListener("krimiscan:search", handler);
+   155→   155→    return () => window.removeEventListener("krimiscan:search", handler);
+   156→   156→  }, []);
+   157→   157→
+   158→   158→  // Filtre/veri değişiminde yükle
+   159→   159→  useEffect(() => {
+   160→   160→    loadFindings();
+   161→   161→  }, [loadFindings]);
+   162→   162→  useEffect(() => {
+   163→   163→    loadStats();
+   164→   164→  }, [loadStats]);
+   165→   165→
+   166→   166→  // ---- Tarama akışı ----
+   167→   167→  const startScan = async () => {
+   168→   168→    if (scanning) return;
+   169→   169→    setScanning(true);
+   170→   170→    setLog([]);
+   171→   171→    setSessionAdded(0);
+   172→   172→    setDoneLangs(0);
+   173→   173→    setCurrentLang(null);
+   174→   174→    setLoading(true);
+   175→   175→    scanSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+   176→   176→
+   177→   177→    try {
+   178→   178→      const startRes = await fetch("/api/scan/start", {
+   179→   179→        method: "POST",
+   180→   180→        headers: { "Content-Type": "application/json" },
+   181→   181→        body: JSON.stringify({ scope, focusCategory }),
+   182→   182→      });
+   183→   183→      const startData = await startRes.json();
+   184→   184→      if (!startData.success) throw new Error(startData.error);
+   185→   185→
+   186→   186→      const scanId: string = startData.scanId;
+   187→   187→      const langs: { code: string; name: string; flag: string }[] = startData.languages;
+   188→   188→      setTotalLangs(langs.length);
+   189→   189→      let addedTotal = 0;
+   190→   190→
+   191→   191→      for (let i = 0; i < langs.length; i++) {
+   192→   192→        const lang = langs[i];
+   193→   193→        setCurrentLang({ flag: lang.flag, name: lang.name });
+   194→   194→        const logId = `${lang.code}-${Date.now()}`;
+   195→   195→        setLog((prev) => [
+   196→   196→          ...prev,
+   197→   197→          { id: logId, flag: lang.flag, langName: lang.name, status: "searching" },
+   198→   198→        ]);
+   199→   199→
+   200→   200→        try {
+   201→   201→          const res = await fetch("/api/scan/step", {
+   202→   202→            method: "POST",
+   203→   203→            headers: { "Content-Type": "application/json" },
+   204→   204→            body: JSON.stringify({ scanId, langCode: lang.code, focusCategory }),
+   205→   205→          });
+   206→   206→          const data = await res.json();
+   207→   207→          if (data.success) {
+   208→   208→            addedTotal += data.added;
+   209→   209→            setSessionAdded(addedTotal);
+   210→   210→            setLog((prev) =>
+   211→   211→              prev.map((e) =>
+   212→   212→                e.id === logId
+   213→   213→                  ? { ...e, status: "done", searched: data.searched, relevant: data.relevant, added: data.added }
+   214→   214→                  : e
+   215→   215→              )
+   216→   216→            );
+   217→   217→          } else {
+   218→   218→            setLog((prev) => prev.map((e) => (e.id === logId ? { ...e, status: "error" } : e)));
+   219→   219→          }
+   220→   220→        } catch {
+   221→   221→          setLog((prev) => prev.map((e) => (e.id === logId ? { ...e, status: "error" } : e)));
+   222→   222→        }
+   223→   223→        setDoneLangs(i + 1);
+   224→   224→
+   225→   225→        // Her 3 dilde canlı güncelle
+   226→   226→        if ((i + 1) % 3 === 0) {
+   227→   227→          loadFindings();
+   228→   228→          loadStats();
+   229→   229→        }
+   230→   230→      }
+   231→   231→
+   232→   232→      await fetch("/api/scan/complete", {
+   233→   233→        method: "POST",
+   234→   234→        headers: { "Content-Type": "application/json" },
+   235→   235→        body: JSON.stringify({ scanId }),
+   236→   236→      });
+   237→   237→
+   238→   238→      loadFindings();
+   239→   239→      loadStats();
+   240→   240→      toast({
+   241→   241→        title: "Küresel tarama tamamlandı",
+   242→   242→        description: `${langs.length} dil tarandı, ${addedTotal} yeni bulgu Türkçeleştirilerek arşive eklendi.`,
+   243→   243→      });
+   244→   244→    } catch (error) {
+   245→   245→      toast({
+   246→   246→        title: "Tarama başlatılamadı",
+   247→   247→        description: "Lütfen tekrar deneyin.",
+   248→   248→        variant: "destructive",
+   249→   249→      });
+   250→   250→    } finally {
+   251→   251→      setScanning(false);
+   252→   252→      setCurrentLang(null);
+   253→   253→    }
+   254→   254→  };
+   255→   255→
+   256→   256→  // ---- Yer imi ----
+   257→   257→  const toggleBookmark = async (f: FindingItem) => {
+   258→   258→    setBookmarkPendingId(f.id);
+   259→   259→    const optimistic = !f.bookmarked;
+   260→   260→    setFindings((prev) => prev.map((x) => (x.id === f.id ? { ...x, bookmarked: optimistic } : x)));
+   261→   261→    try {
+   262→   262→      await fetch(`/api/findings/${f.id}`, {
+   263→   263→        method: "PATCH",
+   264→   264→        headers: { "Content-Type": "application/json" },
+   265→   265→        body: JSON.stringify({ bookmarked: optimistic }),
+   266→   266→      });
+   267→   267→      loadStats();
+   268→   268→    } catch {
+   269→   269→      setFindings((prev) => prev.map((x) => (x.id === f.id ? { ...x, bookmarked: f.bookmarked } : x)));
+   270→   270→    } finally {
+   271→   271→      setBookmarkPendingId(null);
+   272→   272→    }
+   273→   273→  };
+   274→   274→
+   275→   275→  // ---- Okundu işaretleme ----
+   276→   276→  const toggleRead = async (f: FindingItem) => {
+   277→   277→    setReadPendingId(f.id);
+   278→   278→    const optimistic = !f.isRead;
+   279→   279→    setFindings((prev) => prev.map((x) => (x.id === f.id ? { ...x, isRead: optimistic } : x)));
+   280→   280→    try {
+   281→   281→      await fetch(`/api/findings/${f.id}`, {
+   282→   282→        method: "PATCH",
+   283→   283→        headers: { "Content-Type": "application/json" },
+   284→   284→        body: JSON.stringify({ isRead: optimistic }),
+   285→   285→      });
+   286→   286→    } catch {
+   287→   287→      setFindings((prev) => prev.map((x) => (x.id === f.id ? { ...x, isRead: f.isRead } : x)));
+   288→   288→    } finally {
+   289→   289→      setReadPendingId(null);
+   290→   290→    }
+   291→   291→  };
+   292→   292→
+   293→   293→  // ---- Kişisel not kaydetme ----
+   294→   294→  const saveNote = async (f: FindingItem, notes: string) => {
+   295→   295→    const trimmed = notes.trim();
+   296→   296→    setFindings((prev) =>
+   297→   297→      prev.map((x) => (x.id === f.id ? { ...x, notes: trimmed || null } : x))
+   298→   298→    );
+   299→   299→    try {
+   300→   300→      await fetch(`/api/findings/${f.id}`, {
+   301→   301→        method: "PATCH",
+   302→   302→        headers: { "Content-Type": "application/json" },
+   303→   303→        body: JSON.stringify({ notes: trimmed }),
+   304→   304→      });
+   305→   305→      toast({
+   306→   306→        title: trimmed ? "Not kaydedildi" : "Not silindi",
+   307→   307→        description: trimmed ? "Bulgu kartında görünecek." : undefined,
+   308→   308→      });
+   309→   309→    } catch {
+   310→   310→      setFindings((prev) =>
+   311→   311→        prev.map((x) => (x.id === f.id ? { ...x, notes: f.notes } : x))
+   312→   312→      );
+   313→   313→      toast({
+   314→   314→        title: "Not kaydedilemedi",
+   315→   315→        description: "Lütfen tekrar deneyin.",
+   316→   316→        variant: "destructive",
+   317→   317→      });
+   318→   318→    }
+   319→   319→  };
+   320→   320→
+   321→   321→  const openDeepDive = (f: FindingItem) => {
+   322→   322→    setActiveFinding(f);
+   323→   323→    setSheetOpen(true);
+   324→   324→  };
+   325→   325→
+   326→   326→  const lastScan = stats?.lastScan;
+   327→   327→  const lastScanDate = lastScan
+   328→   328→    ? new Date(lastScan.startedAt).toLocaleString("tr-TR", {
+   329→   329→        day: "numeric",
+   330→   330→        month: "short",
+   331→   331→        hour: "2-digit",
+   332→   332→        minute: "2-digit",
+   333→   333→      })
+   334→   334→    : null;
+   335→   335→
+   336→   336→  return (
+   337→   337→    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+   338→   338→      {/* ================= HEADER ================= */}
+   339→   339→      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-md">
+   340→   340→        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+   341→   341→          <div className="flex items-center gap-3 min-w-0">
+   342→   342→            <div className="h-10 w-10 rounded-lg bg-amber-500/15 border border-amber-500/40 flex items-center justify-center shrink-0">
+   343→   343→              <Fingerprint className="h-5 w-5 text-amber-400" />
+   344→   344→            </div>
+   345→   345→            <div className="min-w-0">
+   346→   346→              <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight">
+   347→   347→                KrimiScan <span className="text-amber-400">Global</span>
+   348→   348→              </h1>
+   349→   349→              <p className="text-[11px] text-slate-400 truncate">
+   350→   350→                Olay Yeri İnceleme Teknikleri Küresel İzleme Merkezi
+   351→   351→              </p>
+   352→   352→            </div>
+   353→   353→          </div>
+   354→   354→          <div className="flex items-center gap-2">
+   355→   355→            <div className="hidden xl:flex items-center gap-2 text-xs text-slate-400 mr-1">
+   356→   356→              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+   357→   357→              {lastScanDate
+   358→   358→                ? `Son tarama: ${lastScanDate} · ${lastScan?.languagesCovered ?? 0} dil`
+   359→   359→                : "Henüz tarama yapılmadı"}
+   360→   360→            </div>
+   361→   361→            <WatchlistDialog openSignal={watchOpenSignal} />
+   362→   362→            <Link
+   363→   363→              href="/assistant"
+   364→   364→              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-300 transition-colors"
+   365→   365→              title="AI İstihbarat Asistanı — arşiv bağlamlı soru-cevap"
+   366→   366→            >
+   367→   367→              <Bot className="h-4 w-4" />
+   368→   368→              <span className="hidden lg:inline">Asistan</span>
+   369→   369→            </Link>
+   370→   370→            <Link
+   371→   371→              href="/briefing"
+   372→   372→              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-300 transition-colors"
+   373→   373→              title="AI İstihbarat Bülteni — LLM sentezli dönem raporu"
+   374→   374→            >
+   375→   375→              <Newspaper className="h-4 w-4" />
+   376→   376→              <span className="hidden lg:inline">Bülten</span>
+   377→   377→            </Link>
+   378→   378→            <Link
+   379→   379→              href="/analytics"
+   380→   380→              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-300 transition-colors"
+   381→   381→              title="Trend ve analitik paneli"
+   382→   382→            >
+   383→   383→              <BarChart3 className="h-4 w-4" />
+   384→   384→              <span className="hidden lg:inline">Analitik</span>
+   385→   385→            </Link>
+   386→   386→            <Link
+   387→   387→              href="/report"
+   388→   388→              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-300 transition-colors"
+   389→   389→              title="Yazdırılabilir küresel istihbarat raporu"
+   390→   390→            >
+   391→   391→              <FileText className="h-4 w-4" />
+   392→   392→              <span className="hidden lg:inline">Rapor</span>
+   393→   393→            </Link>
+   394→   394→          </div>
+   395→   395→        </div>
+   396→   396→      </header>
+   397→   397→
+   398→   398→      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+   399→   399→        {/* ================= HERO + TARAMA PANELİ ================= */}
+   400→   400→        <section className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-950">
+   401→   401→          {/* dekoratif */}
+   402→   402→          <div className="absolute inset-0 pointer-events-none opacity-[0.07] bg-[linear-gradient(rgba(251,191,36,0.6)_1px,transparent_1px),linear-gradient(90deg,rgba(251,191,36,0.6)_1px,transparent_1px)] bg-[size:44px_44px]" />
+   403→   403→          <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+   404→   404→
+   405→   405→          <div className="relative p-6 sm:p-10 space-y-6">
+   406→   406→            <div className="space-y-3 max-w-3xl">
+   407→   407→              <Badge className="bg-amber-500/15 text-amber-300 border-amber-500/30 gap-1.5 hover:bg-amber-500/15">
+   408→   408→                <Radar className="h-3.5 w-3.5" /> Çok Dilli İstihbarat Taraması
+   409→   409→              </Badge>
+   410→   410→              <h2 className="text-2xl sm:text-4xl font-bold tracking-tight leading-tight">
+   411→   411→                Dünyanın her dilinden olay yeri inceleme gelişmeleri,{" "}
+   412→   412→                <span className="text-amber-400">Türkçe</span> olarak
+   413→   413→              </h2>
+   414→   414→              <p className="text-sm sm:text-base text-slate-400 leading-relaxed">
+   415→   415→                {SCAN_LANGUAGES.length} dilde kaynak taraması yapar, adli bilimler ve olay yeri
+   416→   416→                inceleme tekniklerindeki yenilikleri yapay zekâ ile Türkçeye çevirir,
+   417→   417→                kategorize eder ve önem puanlar.
+   418→   418→              </p>
+   419→   419→            </div>
+   420→   420→
+   421→   421→            {/* Kontroller */}
+   422→   422→            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 max-w-4xl">
+   423→   423→              <div className="space-y-1.5">
+   424→   424→                <label className="text-xs font-medium text-slate-400">Tarama Kapsamı</label>
+   425→   425→                <Select value={scope} onValueChange={setScope} disabled={scanning}>
+   426→   426→                  <SelectTrigger className="w-full bg-slate-900 border-slate-700 text-sm">
+   427→   427→                    <SelectValue />
+   428→   428→                  </SelectTrigger>
+   429→   429→                  <SelectContent className="bg-slate-900 border-slate-700">
+   430→   430→                    <SelectItem value="all">Tüm Diller ({SCAN_LANGUAGES.length} dil)</SelectItem>
+   431→   431→                    <SelectItem value="quick">Hızlı Tarama (6 dil)</SelectItem>
+   432→   432→                  </SelectContent>
+   433→   433→                </Select>
+   434→   434→              </div>
+   435→   435→              <div className="space-y-1.5">
+   436→   436→                <label className="text-xs font-medium text-slate-400">Kategori Odağı</label>
+   437→   437→                <Select value={focusCategory} onValueChange={setFocusCategory} disabled={scanning}>
+   438→   438→                  <SelectTrigger className="w-full bg-slate-900 border-slate-700 text-sm">
+   439→   439→                    <SelectValue />
+   440→   440→                  </SelectTrigger>
+   441→   441→                  <SelectContent className="bg-slate-900 border-slate-700">
+   442→   442→                    <SelectItem value="all">Tüm Kategoriler</SelectItem>
+   443→   443→                    {CATEGORIES.map((c) => (
+   444→   444→                      <SelectItem key={c.key} value={c.key}>
+   445→   445→                        {c.label}
+   446→   446→                      </SelectItem>
+   447→   447→                    ))}
+   448→   448→                  </SelectContent>
+   449→   449→                </Select>
+   450→   450→              </div>
+   451→   451→              <div className="sm:col-span-2 flex items-end">
+   452→   452→                <Button
+   453→   453→                  onClick={startScan}
+   454→   454→                  disabled={scanning}
+   455→   455→                  className="w-full h-10 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm"
+   456→   456→                >
+   457→   457→                  {scanning ? (
+   458→   458→                    <>
+   459→   459→                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Tarama sürüyor…
+   460→   460→                    </>
+   461→   461→                  ) : (
+   462→   462→                    <>
+   463→   463→                      <ScanSearch className="h-4 w-4 mr-2" /> Küresel Taramayı Başlat
+   464→   464→                    </>
+   465→   465→                  )}
+   466→   466→                </Button>
+   467→   467→              </div>
+   468→   468→            </div>
+   469→   469→          </div>
+   470→   470→        </section>
+   471→   471→
+   472→   472→        {/* ================= TARAMA İLERLEMESİ ================= */}
+   473→   473→        <div ref={scanSectionRef}>
+   474→   474→          {(scanning || log.length > 0) && (
+   475→   475→            <motion.section
+   476→   476→              initial={{ opacity: 0, y: 12 }}
+   477→   477→              animate={{ opacity: 1, y: 0 }}
+   478→   478→              className="grid gap-4 lg:grid-cols-3"
+   479→   479→            >
+   480→   480→              {/* Canlı radar kartı */}
+   481→   481→              <Card className="border-slate-800 bg-slate-900/70 lg:col-span-1">
+   482→   482→                <CardContent className="p-5 space-y-4">
+   483→   483→                  <div className="flex items-center justify-between">
+   484→   484→                    <h3 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
+   485→   485→                      <RadarIcon className={`h-4 w-4 text-amber-400 ${scanning ? "animate-pulse" : ""}`} />
+   486→   486→                      Tarama Durumu
+   487→   487→                    </h3>
+   488→   488→                    <Badge
+   489→   489→                      className={
+   490→   490→                        scanning
+   491→   491→                          ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+   492→   492→                          : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+   493→   493→                      }
+   494→   494→                    >
+   495→   495→                      {scanning ? "Aktif" : "Tamamlandı"}
+   496→   496→                    </Badge>
+   497→   497→                  </div>
+   498→   498→
+   499→   499→                  {currentLang && (
+   500→   500→                    <div className="flex items-center gap-3 p-3 rounded-lg border border-amber-500/25 bg-amber-500/5">
+   501→   501→                      <span className="text-2xl">{currentLang.flag}</span>
+   502→   502→                      <div>
+   503→   503→                        <p className="text-sm font-semibold text-amber-200">{currentLang.name}</p>
+   504→   504→                        <p className="text-xs text-slate-400">kaynaklar taranıyor ve Türkçeleştiriliyor…</p>
+   505→   505→                      </div>
+   506→   506→                    </div>
+   507→   507→                  )}
+   508→   508→
+   509→   509→                  <div className="space-y-1.5">
+   510→   510→                    <div className="flex justify-between text-xs text-slate-400">
+   511→   511→                      <span>İlerleme</span>
+   512→   512→                      <span>
+   513→   513→                        {doneLangs}/{totalLangs} dil
+   514→   514→                      </span>
+   515→   515→                    </div>
+   516→   516→                    <Progress
+   517→   517→                      value={totalLangs ? (doneLangs / totalLangs) * 100 : 0}
+   518→   518→                      className="h-2 bg-slate-800 [&>div]:bg-amber-400"
+   519→   519→                    />
+   520→   520→                  </div>
+   521→   521→
+   522→   522→                  <div className="grid grid-cols-2 gap-2 pt-1">
+   523→   523→                    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-center">
+   524→   524→                      <p className="text-xl font-bold text-amber-400">{sessionAdded}</p>
+   525→   525→                      <p className="text-[11px] text-slate-400">eklenen bulgu</p>
+   526→   526→                    </div>
+   527→   527→                    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-center">
+   528→   528→                      <p className="text-xl font-bold text-emerald-400">{doneLangs}</p>
+   529→   529→                      <p className="text-[11px] text-slate-400">tamamlanan dil</p>
+   530→   530→                    </div>
+   531→   531→                  </div>
+   532→   532→                </CardContent>
+   533→   533→              </Card>
+   534→   534→
+   535→   535→              {/* Tarama günlüğü */}
+   536→   536→              <Card className="border-slate-800 bg-slate-900/70 lg:col-span-2">
+   537→   537→                <CardContent className="p-0">
+   538→   538→                  <h3 className="font-semibold text-sm text-slate-200 p-4 pb-2 flex items-center gap-2">
+   539→   539→                    <Globe2 className="h-4 w-4 text-slate-400" /> Tarama Günlüğü
+   540→   540→                  </h3>
+   541→   541→                  <ScrollArea className="h-56">
+   542→   542→                    <div className="px-4 pb-4 space-y-1.5">
+   543→   543→                      {log.map((entry) => (
+   544→   544→                        <div
+   545→   545→                          key={entry.id}
+   546→   546→                          className="flex items-center gap-2.5 text-xs py-1.5 px-2.5 rounded-md bg-slate-950/50 border border-slate-800/60"
+   547→   547→                        >
+   548→   548→                          <span className="text-base">{entry.flag}</span>
+   549→   549→                          {entry.status === "searching" && (
+   550→   550→                            <>
+   551→   551→                              <Loader2 className="h-3.5 w-3.5 text-amber-400 animate-spin" />
+   552→   552→                              <span className="text-amber-200">{entry.langName} taranıyor…</span>
+   553→   553→                            </>
+   554→   554→                          )}
+   555→   555→                          {entry.status === "done" && (
+   556→   556→                            <>
+   557→   557→                              <CircleCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+   558→   558→                              <span className="text-slate-300">
+   559→   559→                                {entry.langName}: {entry.searched} sonuç, {entry.relevant} alakalı,{" "}
+   560→   560→                                <span className="text-emerald-300 font-semibold">
+   561→   561→                                  {entry.added} yeni bulgu
+   562→   562→                                </span>
+   563→   563→                              </span>
+   564→   564→                            </>
+   565→   565→                          )}
+   566→   566→                          {entry.status === "error" && (
+   567→   567→                            <>
+   568→   568→                              <CircleAlert className="h-3.5 w-3.5 text-red-400 shrink-0" />
+   569→   569→                              <span className="text-red-300">{entry.langName}: tarama hatası</span>
+   570→   570→                            </>
+   571→   571→                          )}
+   572→   572→                        </div>
+   573→   573→                      ))}
+   574→   574→                    </div>
+   575→   575→                  </ScrollArea>
+   576→   576→                </CardContent>
+   577→   577→              </Card>
+   578→   578→            </motion.section>
+   579→   579→          )}
+   580→   580→        </div>
+   581→   581→
+   582→   582→        {/* ================= İSTATİSTİKLER ================= */}
+   583→   583→        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+   584→   584→          {[
+   585→   585→            {
+   586→   586→              icon: Database,
+   587→   587→              label: "Toplam Bulgu",
+   588→   588→              value: stats?.total ?? 0,
+   589→   589→              color: "text-amber-400",
+   590→   590→            },
+   591→   591→            {
+   592→   592→              icon: Sparkles,
+   593→   593→              label: "Yeni Teknoloji",
+   594→   594→              value: stats?.newTech ?? 0,
+   595→   595→              color: "text-emerald-400",
+   596→   596→            },
+   597→   597→            {
+   598→   598→              icon: Languages,
+   599→   599→              label: "Kaynak Dil",
+   600→   600→              value: stats?.languages.length ?? 0,
+   601→   601→              color: "text-purple-400",
+   602→   602→            },
+   603→   603→            {
+   604→   604→              icon: Bookmark,
+   605→   605→              label: "Yer İmleri",
+   606→   606→              value: stats?.bookmarked ?? 0,
+   607→   607→              color: "text-orange-400",
+   608→   608→            },
+   609→   609→          ].map((s, i) => (
+   610→   610→            <Card key={i} className="border-slate-800 bg-slate-900/70">
+   611→   611→              <CardContent className="p-4 flex items-center gap-3">
+   612→   612→                <div className="h-9 w-9 rounded-lg bg-slate-800/80 border border-slate-700 flex items-center justify-center shrink-0">
+   613→   613→                  <s.icon className={`h-4 w-4 ${s.color}`} />
+   614→   614→                </div>
+   615→   615→                <div>
+   616→   616→                  <p className="text-xl font-bold leading-none">{s.value}</p>
+   617→   617→                  <p className="text-[11px] text-slate-400 mt-1">{s.label}</p>
+   618→   618→                </div>
+   619→   619→              </CardContent>
+   620→   620→            </Card>
+   621→   621→          ))}
+   622→   622→        </section>
+   623→   623→
+   624→   624→        {/* ================= FİLTRELER ================= */}
+   625→   625→        <section className="space-y-3" id="bulgu-listesi">
+   626→   626→          <div className="flex flex-col md:flex-row gap-3 md:items-center">
+   627→   627→            <div className="relative flex-1">
+   628→   628→              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+   629→   629→              <Input
+   630→   630→                value={searchInput}
+   631→   631→                onChange={(e) => setSearchInput(e.target.value)}
+   632→   632→                placeholder="Bulgularda ara (Türkçe başlık, özet, anahtar kelime)…"
+   633→   633→                className="pl-9 bg-slate-900 border-slate-700 text-sm placeholder:text-slate-400"
+   634→   634→              />
+   635→   635→            </div>
+   636→   636→            <div className="flex gap-2">
+   637→   637→              <Select value={language} onValueChange={setLanguage}>
+   638→   638→                <SelectTrigger className="w-full sm:w-44 bg-slate-900 border-slate-700 text-sm">
+   639→   639→                  <SelectValue />
+   640→   640→                </SelectTrigger>
+   641→   641→                <SelectContent className="bg-slate-900 border-slate-700">
+   642→   642→                  <SelectItem value={ALL_LANG_VALUE}>Tüm Diller</SelectItem>
+   643→   643→                  {SCAN_LANGUAGES.map((l) => (
+   644→   644→                    <SelectItem key={l.code} value={l.code}>
+   645→   645→                      {l.flag} {l.name}
+   646→   646→                    </SelectItem>
+   647→   647→                  ))}
+   648→   648→                </SelectContent>
+   649→   649→              </Select>
+   650→   650→              <Select value={sort} onValueChange={setSort}>
+   651→   651→                <SelectTrigger className="w-full sm:w-40 bg-slate-900 border-slate-700 text-sm">
+   652→   652→                  <SelectValue />
+   653→   653→                </SelectTrigger>
+   654→   654→                <SelectContent className="bg-slate-900 border-slate-700">
+   655→   655→                  <SelectItem value="recent">En Yeni</SelectItem>
+   656→   656→                  <SelectItem value="importance">En Önemli</SelectItem>
+   657→   657→                  <SelectItem value="newtech">Yenilik Önce</SelectItem>
+   658→   658→                </SelectContent>
+   659→   659→              </Select>
+   660→   660→              <Button
+   661→   661→                variant={onlyUnread ? "default" : "outline"}
+   662→   662→                onClick={() => setOnlyUnread((v) => !v)}
+   663→   663→                className={`h-9 px-3 text-sm ${
+   664→   664→                  onlyUnread
+   665→   665→                    ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+   666→   666→                    : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+   667→   667→                }`}
+   668→   668→                title="Yalnızca okunmamış bulgular"
+   669→   669→              >
+   670→   670→                <CheckCircle2 className={`h-4 w-4 ${onlyUnread ? "fill-slate-950" : ""}`} />
+   671→   671→                <span className="sr-only sm:not-sr-only sm:ml-1">Okunmamış</span>
+   672→   672→              </Button>
+   673→   673→              <Button
+   674→   674→                variant={onlyBookmarked ? "default" : "outline"}
+   675→   675→                onClick={() => setOnlyBookmarked((v) => !v)}
+   676→   676→                className={`h-9 px-3 text-sm ${
+   677→   677→                  onlyBookmarked
+   678→   678→                    ? "bg-amber-500 text-slate-950 hover:bg-amber-400"
+   679→   679→                    : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+   680→   680→                }`}
+   681→   681→              >
+   682→   682→                <Bookmark className={`h-4 w-4 ${onlyBookmarked ? "fill-slate-950" : ""}`} />
+   683→   683→                <span className="sr-only sm:not-sr-only sm:ml-1">Yer İmleri</span>
+   684→   684→              </Button>
+   685→   685→              <DropdownMenu>
+   686→   686→                <DropdownMenuTrigger asChild>
+   687→   687→                  <Button
+   688→   688→                    variant="outline"
+   689→   689→                    className="h-9 px-3 border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-amber-300"
+   690→   690→                    title="Arşivi dışa aktar"
+   691→   691→                  >
+   692→   692→                    <Download className="h-4 w-4" />
+   693→   693→                    <span className="sr-only sm:not-sr-only sm:ml-1">Dışa Aktar</span>
+   694→   694→                  </Button>
+   695→   695→                </DropdownMenuTrigger>
+   696→   696→                <DropdownMenuContent className="bg-slate-900 border-slate-700 text-slate-300">
+   697→   697→                  <DropdownMenuItem
+   698→   698→                    onClick={() => window.open("/api/export?format=csv", "_blank")}
+   699→   699→                    className="gap-2 cursor-pointer"
+   700→   700→                  >
+   701→   701→                    <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
+   702→   702→                    CSV olarak indir (Excel)
+   703→   703→                  </DropdownMenuItem>
+   704→   704→                  <DropdownMenuItem
+   705→   705→                    onClick={() => window.open("/api/export?format=json", "_blank")}
+   706→   706→                    className="gap-2 cursor-pointer"
+   707→   707→                  >
+   708→   708→                    <FileJson className="h-4 w-4 text-purple-400" />
+   709→   709→                    JSON olarak indir
+   710→   710→                  </DropdownMenuItem>
+   711→   711→                </DropdownMenuContent>
+   712→   712→              </DropdownMenu>
+   713→   713→            </div>
+   714→   714→          </div>
+   715→   715→
+   716→   716→          {/* Görünüm değiştirici: Kart / Zaman Çizelgesi */}
+   717→   717→          <div className="flex items-center justify-between gap-2">
+   718→   718→            <p className="text-xs text-slate-400">
+   719→   719→              {findings.length > 0 && `${findings.length} bulgu görüntüleniyor`}
+   720→   720→            </p>
+   721→   721→            <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+   722→   722→              <button
+   723→   723→                onClick={() => setView("kart")}
+   724→   724→                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
+   725→   725→                  view === "kart"
+   726→   726→                    ? "bg-amber-500 text-slate-950 font-semibold"
+   727→   727→                    : "text-slate-400 hover:text-slate-200"
+   728→   728→                }`}
+   729→   729→              >
+   730→   730→                <LayoutGrid className="h-3.5 w-3.5" /> Kart
+   731→   731→              </button>
+   732→   732→              <button
+   733→   733→                onClick={() => setView("zaman")}
+   734→   734→                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
+   735→   735→                  view === "zaman"
+   736→   736→                    ? "bg-amber-500 text-slate-950 font-semibold"
+   737→   737→                    : "text-slate-400 hover:text-slate-200"
+   738→   738→                }`}
+   739→   739→              >
+   740→   740→                <GitCommitHorizontal className="h-3.5 w-3.5" /> Zaman Çizelgesi
+   741→   741→              </button>
+   742→   742→            </div>
+   743→   743→          </div>
+   744→   744→
+   745→   745→          {/* Kategori çipleri */}
+   746→   746→          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+   747→   747→            <button
+   748→   748→              onClick={() => setCategory("all")}
+   749→   749→              className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors ${
+   750→   750→                category === "all"
+   751→   751→                  ? "bg-amber-500 text-slate-950 border-amber-500 font-semibold"
+   752→   752→                  : "bg-slate-900 text-slate-400 border-slate-700 hover:border-amber-500/40 hover:text-amber-300"
+   753→   753→              }`}
+   754→   754→            >
+   755→   755→              Tümü
+   756→   756→            </button>
+   757→   757→            {CATEGORIES.map((c) => {
+   758→   758→              const count = stats?.categories.find((x) => x.key === c.key)?.count ?? 0;
+   759→   759→              return (
+   760→   760→                <button
+   761→   761→                  key={c.key}
+   762→   762→                  onClick={() => setCategory(c.key)}
+   763→   763→                  className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors ${
+   764→   764→                    category === c.key
+   765→   765→                      ? "bg-amber-500 text-slate-950 border-amber-500 font-semibold"
+   766→   766→                      : "bg-slate-900 text-slate-400 border-slate-700 hover:border-amber-500/40 hover:text-amber-300"
+   767→   767→                  }`}
+   768→   768→                >
+   769→   769→                  {c.label}
+   770→   770→                  {count > 0 && <span className="ml-1 opacity-70">({count})</span>}
+   771→   771→                </button>
+   772→   772→              );
+   773→   773→            })}
+   774→   774→          </div>
+   775→   775→        </section>
+   776→   776→
+   777→   777→        {/* ================= BULGU LİSTESİ ================= */}
+   778→   778→        <section>
+   779→   779→          {loading ? (
+   780→   780→            view === "kart" ? (
+   781→   781→              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+   782→   782→                {Array.from({ length: 6 }).map((_, i) => (
+   783→   783→                  <Skeleton key={i} className="h-72 rounded-xl bg-slate-900 border border-slate-800" />
+   784→   784→                ))}
+   785→   785→              </div>
+   786→   786→            ) : (
+   787→   787→              <div className="max-w-3xl mx-auto space-y-4">
+   788→   788→                {Array.from({ length: 4 }).map((_, i) => (
+   789→   789→                  <Skeleton key={i} className="h-32 rounded-xl bg-slate-900 border border-slate-800" />
+   790→   790→                ))}
+   791→   791→              </div>
+   792→   792→            )
+   793→   793→          ) : findings.length === 0 ? (
+   794→   794→            <div className="text-center py-16 space-y-4">
+   795→   795→              <div className="mx-auto h-16 w-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
+   796→   796→                <Fingerprint className="h-8 w-8 text-slate-500" />
+   797→   797→              </div>
+   798→   798→              <div className="space-y-1.5">
+   799→   799→                <h3 className="font-semibold text-slate-200">Henüz bulgu yok</h3>
+   800→   800→                <p className="text-sm text-slate-400 max-w-md mx-auto">
+   801→   801→                  Küresel taramayı başlatın; {SCAN_LANGUAGES.length} dildeki kaynaklardan olay yeri
+   802→   802→                  inceleme gelişmeleri toplansın ve Türkçe olarak bu panelde listelensin.
+   803→   803→                </p>
+   804→   804→              </div>
+   805→   805→              <Button
+   806→   806→                onClick={startScan}
+   807→   807→                disabled={scanning}
+   808→   808→                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold"
+   809→   809→              >
+   810→   810→                <ScanSearch className="h-4 w-4 mr-2" /> İlk Taramayı Başlat
+   811→   811→              </Button>
+   812→   812→            </div>
+   813→   813→          ) : view === "kart" ? (
+   814→   814→            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+   815→   815→              {findings.map((f, i) => (
+   816→   816→                <FindingCard
+   817→   817→                  key={f.id}
+   818→   818→                  finding={f}
+   819→   819→                  index={i}
+   820→   820→                  onDeepDive={openDeepDive}
+   821→   821→                  onToggleBookmark={toggleBookmark}
+   822→   822→                  bookmarkPending={bookmarkPendingId === f.id}
+   823→   823→                  onToggleRead={toggleRead}
+   824→   824→                  onOpenNote={(x) => {
+   825→   825→                    setNoteFinding(x);
+   826→   826→                    setNoteOpen(true);
+   827→   827→                  }}
+   828→   828→                  readPending={readPendingId === f.id}
+   829→   829→                />
+   830→   830→              ))}
+   831→   831→            </div>
+   832→   832→          ) : (
+   833→   833→            <TimelineList
+   834→   834→              findings={findings}
+   835→   835→              onDeepDive={openDeepDive}
+   836→   836→              onToggleBookmark={toggleBookmark}
+   837→   837→            />
+   838→   838→          )}
+   839→   839→        </section>
+   840→   840→      </main>
+   841→   841→
+   842→   842→      {/* ================= FOOTER ================= */}
+   843→   843→      <footer className="mt-auto border-t border-slate-800/80 bg-slate-950">
+   844→   844→        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
+   845→   845→          <p className="flex items-center gap-1.5">
+   846→   846→            <Fingerprint className="h-3.5 w-3.5 text-amber-500/70" />
+   847→   847→            KrimiScan Global — adli bilimler gelişmelerini dünya dillerinden Türkçeye taşıyan
+   848→   848→            profesyonel izleme sistemi
+   849→   849→          </p>
+   850→   850→          <p className="flex items-center gap-1.5">
+   851→   851→            <Clock className="h-3.5 w-3.5" />
+   852→   852→            İçerik kaynak sitelerden derlenir, profesyonel değerlendirme içindir
+   853→   853→          </p>
+   854→   854→        </div>
+   855→   855→      </footer>
+   856→   856→
+   857→   857→      {/* ================= DERİN ANALİZ PANELİ ================= */}
+   858→   858→      <DeepDiveSheet finding={activeFinding} open={sheetOpen} onOpenChange={setSheetOpen} />
+   859→   859→
+   860→   860→      {/* ================= KİŞİSEL NOT DİYALOGU ================= */}
+   861→   861→      <NoteDialog
+   862→   862→        finding={noteFinding}
+   863→   863→        open={noteOpen}
+   864→   864→        onOpenChange={setNoteOpen}
+   865→   865→        onSave={saveNote}
+   866→   866→      />
+   867→   867→    </div>
+   868→   868→  );
+   869→   869→}
+   870→   870→

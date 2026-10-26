@@ -120,3 +120,197 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ============================================================
+   KRİMİSCAN GLOBAL — E-DERGİ TİPOGRAFİSİ VE SAYFA ÇEVİRME
+   ============================================================ */
+
+/* Dergi serif tipografi (istemci tarafı sistem fontları) */
+.mag-serif {
+  font-family: Georgia, "Playfair Display", "Liberation Serif", "Times New Roman", serif;
+}
+
+/* Dergi sayfası — krem kâğıt dokusu */
+.mag-page {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  color: #221d15;
+  background:
+    radial-gradient(ellipse at 18% 8%, rgba(255, 255, 255, 0.7), transparent 52%),
+    radial-gradient(ellipse at 85% 100%, rgba(120, 96, 55, 0.1), transparent 55%),
+    linear-gradient(135deg, #f8f3e7 0%, #f4edda 48%, #efe6cf 100%);
+  box-shadow:
+    0 34px 64px -20px rgba(0, 0, 0, 0.72),
+    0 10px 26px -12px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(34, 29, 21, 0.08);
+}
+/* Sırt/kıyı gölgesi */
+.mag-page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, rgba(34, 29, 21, 0.16), transparent 3.2%),
+    linear-gradient(to left, rgba(34, 29, 21, 0.1), transparent 2.4%),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.14), transparent 8%);
+}
+
+/* Sahnede sayfa çerçevesi — perspektif burada */
+.mag-frame {
+  perspective: 2400px;
+  perspective-origin: 50% 42%;
+}
+
+/* Çevrilen yaprak */
+.mag-leaf {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  transform-style: preserve-3d;
+  transform-origin: left center;
+  will-change: transform;
+  pointer-events: none;
+}
+.mag-leaf.leaf-next {
+  animation: magFlipNext 0.95s cubic-bezier(0.55, 0.06, 0.32, 1) forwards;
+}
+.mag-leaf.leaf-prev {
+  animation: magFlipPrev 0.95s cubic-bezier(0.55, 0.06, 0.32, 1) forwards;
+}
+@keyframes magFlipNext {
+  0% { transform: rotateY(0deg); }
+  100% { transform: rotateY(-180deg); }
+}
+@keyframes magFlipPrev {
+  0% { transform: rotateY(-180deg); }
+  100% { transform: rotateY(0deg); }
+}
+
+.mag-leaf-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow: 0 24px 48px -18px rgba(0, 0, 0, 0.6);
+}
+.mag-leaf-front {
+  background: #f4edda;
+}
+.mag-leaf-back {
+  transform: rotateY(180deg);
+  background:
+    linear-gradient(105deg, #efe7d1 0%, #e8dfc5 55%, #ddd1b0 100%);
+}
+/* Yaprak ön yüzü — sırt tarafı kararan gradyan */
+.mag-leaf-front .mag-leaf-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to right, rgba(34, 29, 21, 0.3), transparent 14%);
+}
+/* Yaprak arka yüzü — dış kenar kararan */
+.mag-leaf-back .mag-leaf-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to left, rgba(34, 29, 21, 0.32), transparent 14%),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.16), transparent 30%);
+}
+
+/* Çevirme sırasında sahneye düşen yumuşak gölge */
+.mag-underglow {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at 62% 50%, rgba(0, 0, 0, 0.4), transparent 62%);
+}
+.mag-underglow.active {
+  animation: magUnderGlow 0.95s ease forwards;
+}
+@keyframes magUnderGlow {
+  0% { opacity: 0; }
+  45% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Dergi metin kolonları (baskı hissi) */
+.mag-cols {
+  column-gap: 1.9rem;
+  column-rule: 1px solid rgba(34, 29, 21, 0.16);
+  text-align: justify;
+  hyphens: auto;
+}
+
+/* Baş harf süsü (drop cap) */
+.mag-dropcap::first-letter {
+  float: left;
+  font-size: 3.1em;
+  line-height: 0.82;
+  padding-right: 0.1em;
+  padding-top: 0.05em;
+  font-weight: 700;
+  color: #92400e;
+}
+
+/* Dergi kickeri (üst kategori etiketi) */
+.mag-kicker {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #9a3412;
+  border-top: 2px solid #9a3412;
+  padding-top: 3px;
+}
+.mag-tag-red {
+  display: inline-block;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #f8f3e7;
+  background: #9f1239;
+  padding: 2px 7px;
+  border-radius: 2px;
+}
+
+/* Kâğıt üstü ince ayraç */
+.mag-rule {
+  border: 0;
+  border-top: 1px solid rgba(34, 29, 21, 0.18);
+}
+
+/* Kaydırma çubuğu gizle (içindekiler listesi vb.) */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Sayfa değişiminde hafif içerik belirme */
+.mag-page-content {
+  animation: magContentIn 0.5s ease both;
+}
+@keyframes magContentIn {
+  0% { opacity: 0.25; }
+  100% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mag-leaf.leaf-next,
+  .mag-leaf.leaf-prev,
+  .mag-underglow.active,
+  .mag-page-content {
+    animation-duration: 0.01s;
+  }
+}
