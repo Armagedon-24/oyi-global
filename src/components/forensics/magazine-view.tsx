@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bookmark,
+  BookOpenText,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
@@ -23,8 +24,31 @@ import {
 import { categoryLabel, getLanguage } from "@/lib/forensics-config";
 import { imgProxyUrl, parseFindingImages } from "@/lib/image-utils";
 import type { FindingItem } from "@/lib/types";
+import { FullReadDialog } from "@/components/forensics/full-read-dialog";
 
 const MAX_ARTICLES = 12;
+const FLIP_MS = 1120;
+
+/** Köşeden sürükleme durumu — sayfa parmağı izler */
+interface DragState {
+  dir: "next" | "prev";
+  from: number;
+  to: number;
+  p: number; // 0..1 çevirme ilerlemesi
+  settling: "commit" | "back" | null;
+}
+
+/** Sürükleme ilerlemesine göre yaprağın bükülmüş (esneyen) transform'u */
+function leafTransform(ds: { dir: "next" | "prev"; p: number }): string {
+  const bend = Math.sin(Math.PI * ds.p); // ortada en çok esner
+  const angle = ds.dir === "next" ? -ds.p * 180 : -(1 - ds.p) * 180;
+  const rz = (ds.dir === "next" ? 1 : -1) * bend * 2.8;
+  const tx = (ds.dir === "next" ? 1 : -1) * bend * 0.5;
+  const ty = -bend * 1.3;
+  const sx = 1 - bend * 0.045;
+  const sy = 1 + bend * 0.028;
+  return `rotateY(${angle.toFixed(2)}deg) rotateZ(${rz.toFixed(2)}deg) translate3d(${tx.toFixed(2)}%, ${ty.toFixed(2)}%, 0) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
+}
 
 type MagPage =
   | { kind: "cover"; featured: FindingItem; secondary: FindingItem[]; totalCount: number }
@@ -79,8 +103,17 @@ export function MagazineView({
 }: MagazineViewProps) {
   const [page, setPage] = useState(0);
   const [flip, setFlip] = useState<{ dir: "next" | "prev"; from: number; to: number } | null>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const [reading, setReading] = useState<FindingItem | null>(null);
   const flipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchX = useRef<number | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const leafRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const dragStartX = useRef(0);
+  const dragWidth = useRef(640);
+  const dragMoved = useRef(false);
+  const lastDragAt = useRef(0);
 
   // ---- Sayı bilgisi (dergi künyesi) ----
   const issue = useMemo(() => {
@@ -124,14 +157,14 @@ export function MagazineView({
   // ---- Sayfa çevirme motoru ----
   const goTo = useCallback(
     (target: number, dir?: "next" | "prev") => {
-      if (flip) return;
+      if (flip || dragRef.current) return;
       const clamped = Math.max(0, Math.min(totalPages - 1, target));
       if (clamped === page) return;
       const d: "next" | "prev" = dir ?? (clamped > page ? "next" : "prev");
       setFlip({ dir: d, from: page, to: clamped });
       setPage(clamped);
       if (flipTimer.current) clearTimeout(flipTimer.current);
-      flipTimer.current = setTimeout(() => setFlip(null), 980);
+      flipTimer.current = setTimeout(() => setFlip(null), FLIP_MS + 40);
     },
     [flip, page, totalPages]
   );
@@ -144,24 +177,158 @@ export function MagazineView({
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag && ["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+      if (reading || flip || dragRef.current) return;
       if (e.key === "ArrowRight") goNext();
       else if (e.key === "ArrowLeft") goPrev();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goNext, goPrev]);
+  }, [goNext, goPrev, reading, flip]);
 
   // Dokunmatik kaydırma
   const onTouchStart = (e: React.TouchEvent) => {
     touchX.current = e.touches[0].clientX;
   };
   const onTouchEnd = (e: React.TouchEvent) => {
+    if (Date.now() - lastDragAt.current < 500) return; // köşe sürüklemesiyle çakışmasın
     if (touchX.current === null) return;
     const delta = e.changedTouches[0].clientX - touchX.current;
     touchX.current = null;
     if (delta < -48) goNext();
     else if (delta > 48) goPrev();
   };
+
+  // ---- Köşeden tutup sürükleyerek çevirme (sayfa el ile çevriliyormuş hissi) ----
+  const onEarPointerDown = (dir: "next" | "prev") => (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (flip || dragRef.current || reading || loading) return;
+    if (dir === "next" ? page >= totalPages - 1 : page === 0) return;
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture opsiyonel */
+    }
+    const frame = frameRef.current;
+    dragWidth.current = frame ? frame.getBoundingClientRect().width : 640;
+    dragStartX.current = e.clientX;
+    dragMoved.current = false;
+    lastDragAt.current = Date.now();
+    const ds: DragState = { dir, from: page, to: dir === "next" ? page + 1 : page - 1, p: 0, settling: null };
+    dragRef.current = ds;
+    setDrag(ds);
+  };
+
+  const dragging = drag !== null;
+  useEffect(() => {
+    if (!dragging) return;
+    let raf = 0;
+    let pendingX = 0;
+    const applyMove = () => {
+      raf = 0;
+      const ds = dragRef.current;
+      if (!ds || ds.settling) return;
+      const raw = ds.dir === "next" ? dragStartX.current - pendingX : pendingX - dragStartX.current;
+      if (Math.abs(raw) > 6) dragMoved.current = true;
+      const p = Math.max(0, Math.min(1, raw / (dragWidth.current * 0.72)));
+      if (p === ds.p) return;
+      const next = { ...ds, p };
+      dragRef.current = next;
+      setDrag(next);
+    };
+    const onMove = (e: PointerEvent) => {
+      pendingX = e.clientX;
+      if (!raf) raf = requestAnimationFrame(applyMove);
+    };
+    const finish = (el: HTMLDivElement | null, ds: DragState, commit: boolean) => {
+      // Hareketsiz bırakma = tıklama; çevirme işini click olayına bırak
+      if (!dragMoved.current) {
+        dragRef.current = null;
+        setDrag(null);
+        return;
+      }
+      lastDragAt.current = Date.now();
+      const settled: DragState = { ...ds, settling: commit ? "commit" : "back" };
+      dragRef.current = settled;
+      setDrag(settled);
+      let fired = false;
+      const done = () => {
+        if (fired) return;
+        fired = true;
+        if (commit) setPage(ds.to);
+        setDrag(null);
+        dragRef.current = null;
+      };
+      if (!el) {
+        done();
+        return;
+      }
+      const current = leafTransform(ds);
+      let kf: Keyframe[];
+      let dur: number;
+      if (commit) {
+        dur = 400;
+        kf =
+          ds.dir === "next"
+            ? [
+                { transform: current, offset: 0 },
+                { transform: "rotateY(-169deg) rotateZ(1.5deg) scale(0.99, 1.012)", offset: 0.55 },
+                { transform: "rotateY(-181.5deg) rotateZ(0deg)", offset: 0.88 },
+                { transform: "rotateY(-180deg) rotateZ(0deg) translate3d(0,0,0) scale(1,1)", offset: 1 },
+              ]
+            : [
+                { transform: current, offset: 0 },
+                { transform: "rotateY(-8.5deg) rotateZ(-1.5deg) scale(0.99, 1.012)", offset: 0.55 },
+                { transform: "rotateY(1.5deg) rotateZ(0deg)", offset: 0.88 },
+                { transform: "rotateY(0deg) rotateZ(0deg) translate3d(0,0,0) scale(1,1)", offset: 1 },
+              ];
+      } else {
+        dur = 520;
+        kf =
+          ds.dir === "next"
+            ? [
+                { transform: current, offset: 0 },
+                { transform: "rotateY(7deg) rotateZ(-1.6deg)", offset: 0.55 },
+                { transform: "rotateY(-2.5deg) rotateZ(0.6deg)", offset: 0.82 },
+                { transform: "rotateY(0deg) rotateZ(0deg) translate3d(0,0,0) scale(1,1)", offset: 1 },
+              ]
+            : [
+                { transform: current, offset: 0 },
+                { transform: "rotateY(-187deg) rotateZ(1.6deg)", offset: 0.55 },
+                { transform: "rotateY(-177.5deg) rotateZ(-0.6deg)", offset: 0.82 },
+                { transform: "rotateY(-180deg) rotateZ(0deg) translate3d(0,0,0) scale(1,1)", offset: 1 },
+              ];
+      }
+      try {
+        const anim = el.animate(kf, {
+          duration: dur,
+          easing: "cubic-bezier(0.34, 0.9, 0.34, 1)",
+          fill: "forwards",
+        });
+        anim.finished.then(done).catch(done);
+      } catch {
+        done();
+      }
+    };
+    const onUp = () => {
+      const ds = dragRef.current;
+      if (!ds || ds.settling) return;
+      finish(leafRef.current, ds, ds.p >= 0.34);
+    };
+    const onCancel = () => {
+      const ds = dragRef.current;
+      if (!ds || ds.settling) return;
+      finish(leafRef.current, ds, false);
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+  }, [dragging]);
 
   // ---- Sayfa etiketi ----
   const pageLabel = useMemo(() => {
@@ -173,9 +340,25 @@ export function MagazineView({
     return `Sayfa ${p.folio}`;
   }, [pages, page]);
 
-  // ---- Çevirme sırasında sahnede duracak sayfa ----
-  const staticIndex = flip ? (flip.dir === "next" ? flip.to : flip.from) : page;
-  const leafIndex = flip ? (flip.dir === "next" ? flip.from : flip.to) : -1;
+  // ---- Çevirme/sürükleme sırasında sahnede duracak sayfa ----
+  const staticIndex = drag
+    ? drag.dir === "next"
+      ? drag.to
+      : drag.from
+    : flip
+      ? flip.dir === "next"
+        ? flip.to
+        : flip.from
+      : page;
+  const leafIndex = drag
+    ? drag.dir === "next"
+      ? drag.from
+      : drag.to
+    : flip
+      ? flip.dir === "next"
+        ? flip.from
+        : flip.to
+      : -1;
 
   // ================= SAYFA ŞABLONLARI =================
 
@@ -413,6 +596,15 @@ export function MagazineView({
           <p className="mag-cols mag-serif columns-1 text-[11.5px] leading-[1.62] text-stone-800 sm:columns-2 sm:text-[12.5px]">
             <span className="mag-dropcap block">{body}</span>
           </p>
+          {(f.trSummary?.trim().length ?? 0) > 860 && (
+            <button
+              type="button"
+              onClick={() => setReading(f)}
+              className="mag-serif mx-auto mt-1 block text-[10px] italic text-amber-800 underline underline-offset-2 transition-colors hover:text-amber-950 sm:text-[10.5px]"
+            >
+              Metnin tamamı bu sayfaya sığmadı — Tam Oku ile büyük açın →
+            </button>
+          )}
           {/* Baskı sonu işareti */}
           <div className="mt-auto flex items-center justify-center gap-2 pt-2 text-stone-500" aria-hidden>
             <span className="h-px w-10 bg-stone-500/50" />
@@ -446,14 +638,26 @@ export function MagazineView({
 
         {/* Sayfa içi eylemler */}
         <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-stone-900/20 pt-2.5">
-          <button
-            type="button"
-            onClick={() => onDeepDive(f)}
-            className="inline-flex items-center gap-1.5 rounded-sm bg-stone-900 px-3 py-1.5 text-[11px] font-bold text-amber-50 transition-colors hover:bg-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
-          >
-            <Microscope className="h-3.5 w-3.5 text-amber-300" />
-            Derin Analiz
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setReading(f)}
+              className="inline-flex items-center gap-1.5 rounded-sm border-2 border-stone-900 px-3 py-[5px] text-[11px] font-bold text-stone-900 transition-colors hover:bg-stone-900 hover:text-amber-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+              title="Makalenin tamamını büyük okuma penceresinde aç"
+            >
+              <BookOpenText className="h-3.5 w-3.5" />
+              Tam Oku
+            </button>
+            <button
+              type="button"
+              onClick={() => onDeepDive(f)}
+              className="inline-flex items-center gap-1.5 rounded-sm bg-stone-900 px-3 py-1.5 text-[11px] font-bold text-amber-50 transition-colors hover:bg-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+            >
+              <Microscope className="h-3.5 w-3.5 text-amber-300" />
+              <span className="hidden sm:inline">Derin Analiz</span>
+              <span className="sm:hidden">Analiz</span>
+            </button>
+          </div>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -550,14 +754,14 @@ export function MagazineView({
           <Fingerprint className="h-4 w-4 shrink-0 text-amber-400" />
           <span className="truncate">
             <b className="text-slate-200">E-Dergi Baskısı</b>
-            <span className="hidden sm:inline"> · {findings.length} konu · sayfa çevirmek için kenarlara tıklayın veya ← → tuşlarını kullanın</span>
+            <span className="hidden sm:inline"> · {findings.length} konu · sayfaları sağ alt köşedeki kulaktan tutup çevirebilir, kenarlara tıklayabilir veya ← → tuşlarını kullanabilirsiniz</span>
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={goPrev}
-            disabled={page === 0 || !!flip}
+            disabled={page === 0 || !!flip || !!drag}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-amber-500/50 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-35"
             aria-label="Önceki sayfa"
           >
@@ -569,7 +773,7 @@ export function MagazineView({
           <button
             type="button"
             onClick={goNext}
-            disabled={page >= totalPages - 1 || !!flip}
+            disabled={page >= totalPages - 1 || !!flip || !!drag}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-amber-500/50 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-35"
             aria-label="Sonraki sayfa"
           >
@@ -581,7 +785,8 @@ export function MagazineView({
       {/* Sahne — koyu masa üzerinde krem kâğıt */}
       <div className="mx-auto w-full max-w-3xl px-1">
         <div
-          className="mag-frame relative h-[min(76vh,840px)] min-h-[540px] w-full sm:aspect-[3/4] sm:h-auto sm:max-h-[840px] sm:w-auto sm:min-w-0 sm:mx-auto"
+          ref={frameRef}
+          className={`mag-frame relative h-[min(76vh,840px)] min-h-[540px] w-full sm:aspect-[3/4] sm:h-auto sm:max-h-[840px] sm:w-auto sm:min-w-0 sm:mx-auto ${drag ? "mag-dragging" : ""}`}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
         >
@@ -597,12 +802,38 @@ export function MagazineView({
           {/* Çevirme gölgesi */}
           {flip && <div className="mag-underglow active" />}
 
-          {/* Çevrilen yaprak */}
+          {/* Sürükleme gölgesi — bükülmeyle yoğunlaşır */}
+          {drag && (
+            <div
+              className="mag-underglow"
+              style={{
+                opacity: drag.settling ? 0 : Math.sin(Math.PI * drag.p) * 0.9,
+                transition: "opacity 0.35s ease",
+              }}
+            />
+          )}
+
+          {/* Çevrilen yaprak (tuş / klavye / kenar tıklaması) */}
           {flip && leafIndex >= 0 && leafIndex < totalPages && (
             <div className={`mag-leaf ${flip.dir === "next" ? "leaf-next" : "leaf-prev"}`}>
               <div className="mag-leaf-face mag-leaf-front">
                 <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
                 <div className="mag-leaf-shade" />
+                <div className="mag-corner-curl" />
+              </div>
+              <div className="mag-leaf-face mag-leaf-back">
+                <div className="mag-leaf-shade" />
+              </div>
+            </div>
+          )}
+
+          {/* Sürükleme yaprağı — açı parmağı izler */}
+          {drag && leafIndex >= 0 && leafIndex < totalPages && (
+            <div className="mag-leaf" ref={leafRef} style={{ transform: leafTransform(drag) }}>
+              <div className="mag-leaf-face mag-leaf-front">
+                <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
+                <div className="mag-leaf-shade" />
+                <div className="mag-corner-curl" style={{ opacity: Math.sin(Math.PI * drag.p) }} />
               </div>
               <div className="mag-leaf-face mag-leaf-back">
                 <div className="mag-leaf-shade" />
@@ -611,7 +842,7 @@ export function MagazineView({
           )}
 
           {/* Kenar tıklama bölgeleri (çevirme kısayolu) */}
-          {!loading && !flip && (
+          {!loading && !flip && !drag && (
             <>
               <button
                 type="button"
@@ -629,6 +860,42 @@ export function MagazineView({
               />
             </>
           )}
+
+          {/* Köşe tutamakları — kulaktan tutup çekince sayfa el ile çevriliyormuş gibi döner */}
+          {!loading && !flip && !drag && (
+            <>
+              {page < totalPages - 1 && (
+                <button
+                  type="button"
+                  className="mag-ear mag-ear-right"
+                  onPointerDown={onEarPointerDown("next")}
+                  onClick={() => {
+                    if (Date.now() - lastDragAt.current < 600) return;
+                    goNext();
+                  }}
+                  aria-label="Sayfayı sağ alt köşeden tutup çevir"
+                  title="Sağ alt köşeden tutup çevir"
+                >
+                  <span className="mag-ear-fold" />
+                </button>
+              )}
+              {page > 0 && (
+                <button
+                  type="button"
+                  className="mag-ear mag-ear-left"
+                  onPointerDown={onEarPointerDown("prev")}
+                  onClick={() => {
+                    if (Date.now() - lastDragAt.current < 600) return;
+                    goPrev();
+                  }}
+                  aria-label="Sayfayı sol alt köşeden tutup çevir"
+                  title="Sol alt köşeden tutup çevir"
+                >
+                  <span className="mag-ear-fold" />
+                </button>
+              )}
+            </>
+          )}
         </div>
 
         {/* Alt ilerleme çubuğu */}
@@ -644,6 +911,16 @@ export function MagazineView({
           </span>
         </div>
       </div>
+
+      {/* Tam Oku — makalenin tamamı büyük okuma penceresinde */}
+      {reading && (
+        <FullReadDialog
+          finding={findings.find((x) => x.id === reading.id) ?? reading}
+          onClose={() => setReading(null)}
+          onDeepDive={onDeepDive}
+          onToggleBookmark={onToggleBookmark}
+        />
+      )}
     </section>
   );
 }

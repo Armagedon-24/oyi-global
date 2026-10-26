@@ -1,0 +1,307 @@
+"use client";
+
+/**
+ * Tam Oku — makalenin tamamını büyük okuma penceresinde açar.
+ * Dergi sayfasının büyütülmüş sürümü: krem kâğıt, serif tipografi,
+ * tam metin (kırpılmamış), tüm makale görselleri, lightbox ve okuma eylemleri.
+ */
+
+import { useMemo, useState } from "react";
+import {
+  Bookmark,
+  ExternalLink,
+  Microscope,
+  Star,
+  X,
+} from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { categoryLabel, getLanguage } from "@/lib/forensics-config";
+import { imgProxyUrl, parseFindingImages } from "@/lib/image-utils";
+import type { FindingItem } from "@/lib/types";
+
+interface FullReadDialogProps {
+  finding: FindingItem;
+  onClose: () => void;
+  onDeepDive: (f: FindingItem) => void;
+  onToggleBookmark: (f: FindingItem) => void;
+}
+
+function formatDate(s: string | null): string | null {
+  if (!s) return null;
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
+}
+
+export function FullReadDialog({
+  finding,
+  onClose,
+  onDeepDive,
+  onToggleBookmark,
+}: FullReadDialogProps) {
+  const [zoom, setZoom] = useState<{ url: string; alt: string } | null>(null);
+
+  const images = useMemo(() => parseFindingImages(finding.images), [finding.images]);
+  const langInfo = getLanguage(finding.language);
+  const date = formatDate(finding.publishedDate);
+  const keywords = useMemo(() => {
+    try {
+      const a = JSON.parse(finding.keywords);
+      return Array.isArray(a) ? (a as string[]) : [];
+    } catch {
+      return [];
+    }
+  }, [finding.keywords]);
+
+  // Tam metin — dergi sayfasındaki 860 karakterlik kırpmanın TAMAMI
+  const paragraphs = useMemo(() => {
+    const t = (finding.trSummary ?? "").trim();
+    if (!t) return [];
+    return t
+      .split(/\n+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }, [finding.trSummary]);
+
+  return (
+    <>
+      <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+        <DialogContent
+          showCloseButton={false}
+          className="top-[50%] h-[min(92dvh,960px)] w-[min(94vw,940px)] max-w-[calc(100vw-1rem)]! translate-x-[-50%] translate-y-[-50%] gap-0 overflow-hidden rounded-md border-0 bg-transparent p-0 shadow-none"
+          aria-describedby={undefined}
+        >
+          {/* Kâğıt gövde — mag-page sınıfı position:relative tanımladığından fixed
+              konumlandırmayı ezmek için DialogContent'e değil iç sarmalayıcıya uygulanır */}
+          <div className="mag-page relative flex h-full w-full flex-col overflow-hidden">
+          <span className="sr-only">
+            <DialogTitle>{finding.trTitle}</DialogTitle>
+            <DialogDescription>Tam metin okuma penceresi</DialogDescription>
+          </span>
+
+          {/* Özel kapatma düğmesi (krem zeminde görünür) */}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Okuma penceresini kapat"
+            className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-stone-900/25 bg-white/70 text-stone-800 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+          >
+            <X className="h-4.5 w-4.5" />
+          </button>
+
+          <div className="mag-page-content flex h-full min-h-0 flex-col overflow-y-auto px-5 pb-5 pt-4 sm:px-9 sm:pb-7 sm:pt-6">
+            {/* Üst şerit */}
+            <div className="flex items-center justify-between gap-3 border-b border-stone-900/25 pb-2 text-[9px] uppercase tracking-[0.24em] text-stone-600 sm:text-[10px]">
+              <span className="mag-serif font-bold tracking-[0.18em] text-stone-800">
+                KRİMİSCAN GLOBAL
+              </span>
+              <span className="min-w-0 flex-1 truncate text-center">
+                Tam Metin Baskı · {categoryLabel(finding.category)}
+              </span>
+              <span className="mag-serif">Tam Oku</span>
+            </div>
+
+            {/* Kicker + rozetler */}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="mag-kicker">{categoryLabel(finding.category)}</span>
+              {finding.isNewTech && <span className="mag-tag-red">Yenilik</span>}
+              <span className="inline-flex items-center gap-0.5" title={`Önem puanı: ${finding.importance}/5`}>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star
+                    key={i}
+                    className={`h-3 w-3 ${i < finding.importance ? "fill-amber-700 text-amber-700" : "text-stone-400"}`}
+                  />
+                ))}
+              </span>
+            </div>
+
+            {/* Başlık */}
+            <DialogTitle asChild>
+              <h2 className="mag-serif mt-2 text-[clamp(1.45rem,4vw,2.4rem)] font-bold leading-[1.14] tracking-tight text-stone-900">
+                {finding.trTitle}
+              </h2>
+            </DialogTitle>
+            {finding.originalTitle && (
+              <p className="mag-serif mt-1 text-[12px] italic leading-snug text-stone-600 sm:text-[13.5px]">
+                {finding.originalTitle}
+              </p>
+            )}
+
+            {/* Künye satırı */}
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-y border-stone-900/15 py-1.5 text-[10px] uppercase tracking-[0.14em] text-stone-600 sm:text-[11px]">
+              <span className="font-bold text-stone-900">{finding.sourceName}</span>
+              <span aria-hidden>·</span>
+              <span>{langInfo ? `${langInfo.flag} ${langInfo.name}` : finding.language.toUpperCase()}</span>
+              {date && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>{date}</span>
+                </>
+              )}
+              <span aria-hidden>·</span>
+              <span className="italic normal-case tracking-normal">yapay zekâ ile Türkçeleştirilmiştir</span>
+            </div>
+
+            {/* Makale görselleri — tam galeri */}
+            {images.length > 0 && (
+              <section className="mt-4">
+                <h3 className="text-[9px] font-bold uppercase tracking-[0.22em] text-stone-600">
+                  Makale Görselleri — {images.length}
+                </h3>
+                <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                  {images.map((im, i) => (
+                    <figure
+                      key={i}
+                      className="group cursor-zoom-in"
+                      onClick={() => setZoom({ url: im.url, alt: im.alt || finding.trTitle })}
+                      title="Büyük görüntüle"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={imgProxyUrl(im.url)}
+                        alt={im.alt || finding.trTitle}
+                        loading="lazy"
+                        className="max-h-[340px] w-full border border-stone-900/25 object-cover transition-transform duration-300 group-hover:scale-[1.01]"
+                        onError={(e) => (e.currentTarget.style.display = "none")}
+                      />
+                      {im.alt && (
+                        <figcaption className="mag-serif mt-1 text-[10px] italic leading-snug text-stone-600 sm:text-[11px]">
+                          {im.alt}
+                        </figcaption>
+                      )}
+                    </figure>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* TAM METİN — kırpma yok */}
+            <article className="mag-body mt-5">
+              {paragraphs.length > 0 ? (
+                <div className="mag-cols mag-serif columns-1 gap-8 text-[13.5px] leading-[1.78] text-stone-800 md:columns-2 md:text-[14.5px]">
+                  {paragraphs.map((par, i) => (
+                    <p key={i} className={i === 0 ? "mag-dropcap" : undefined} style={{ marginBottom: "0.85em" }}>
+                      {par}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="mag-serif text-[13.5px] leading-relaxed text-stone-700">
+                  Bu sayıda tam metin bulunamadı. Derin analiz panelinden yapay zekâ değerlendirmesini
+                  okuyabilir veya orijinal kaynağa giderek makalenin tamamına ulaşabilirsiniz.
+                </p>
+              )}
+              <div className="mt-3 flex items-center justify-center gap-2 text-stone-500" aria-hidden>
+                <span className="h-px w-12 bg-stone-500/50" />
+                <span className="text-[11px]">◆</span>
+                <span className="h-px w-12 bg-stone-500/50" />
+              </div>
+            </article>
+
+            {/* Okur notu */}
+            {finding.notes && (
+              <div className="mt-3 rounded-sm border-l-2 border-amber-700 bg-amber-100/50 px-3 py-2 text-[12px] italic leading-snug text-stone-800">
+                <b className="not-italic">Okur Notu:</b> {finding.notes}
+              </div>
+            )}
+
+            {/* Anahtar kavramlar */}
+            {keywords.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-stone-600">
+                  Anahtar:
+                </span>
+                {keywords.map((kw, i) => (
+                  <span
+                    key={i}
+                    className="rounded-sm border border-stone-900/25 px-1.5 py-0.5 text-[10px] font-medium text-stone-700"
+                  >
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Eylem çubuğu */}
+            <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-stone-900/20 pt-3.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onDeepDive(finding);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-sm bg-stone-900 px-3.5 py-2 text-[12px] font-bold text-amber-50 transition-colors hover:bg-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+              >
+                <Microscope className="h-4 w-4 text-amber-300" />
+                Derin Analiz
+              </button>
+              <button
+                type="button"
+                onClick={() => onToggleBookmark(finding)}
+                className={`inline-flex items-center gap-1.5 rounded-sm border px-3 py-2 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 ${
+                  finding.bookmarked
+                    ? "border-amber-700/60 bg-amber-100/60 text-amber-800"
+                    : "border-stone-900/25 text-stone-700 hover:bg-stone-900/10"
+                }`}
+              >
+                <Bookmark className={`h-4 w-4 ${finding.bookmarked ? "fill-amber-700" : ""}`} />
+                {finding.bookmarked ? "İşaretli" : "İşaretle"}
+              </button>
+              <a
+                href={finding.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-sm border border-stone-900/25 px-3 py-2 text-[12px] font-semibold text-stone-700 transition-colors hover:bg-stone-900/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Orijinal Kaynak
+              </a>
+            </div>
+          </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox — görseli tam ekranda büyütür */}
+      {zoom && (
+        <div
+          className="fixed inset-0 z-[70] flex flex-col items-center justify-center gap-3 bg-black/90 p-4"
+          role="dialog"
+          aria-label="Görsel büyütücü"
+          onClick={() => setZoom(null)}
+        >
+          <button
+            type="button"
+            aria-label="Büyütücüyı kapat"
+            className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white transition hover:bg-white/25"
+            onClick={() => setZoom(null)}
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imgProxyUrl(zoom.url)}
+            alt={zoom.alt}
+            className="max-h-[80%] max-w-full rounded-sm object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {zoom.alt && <p className="max-w-2xl text-center text-xs leading-snug text-slate-300">{zoom.alt}</p>}
+          <a
+            href={zoom.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-xs font-semibold text-amber-300 underline underline-offset-2"
+          >
+            Orijinal görseli aç
+          </a>
+        </div>
+      )}
+    </>
+  );
+}

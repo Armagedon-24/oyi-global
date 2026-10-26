@@ -1,0 +1,650 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * KrimiScan Global — E-Dergi Görünümü
+     5→ * Bulguları dergi sayfaları halinde sunar: Kapak → İçindekiler → Makale sayfaları.
+     6→ * Sayfa geçişlerinde 3D sayfa çevirme (page-flip) animasyonu kullanır.
+     7→ */
+     8→
+     9→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+    10→import {
+    11→  Bookmark,
+    12→  ChevronLeft,
+    13→  ChevronRight,
+    14→  ExternalLink,
+    15→  Fingerprint,
+    16→  Images as ImagesIcon,
+    17→  Loader2,
+    18→  Microscope,
+    19→  ScanSearch,
+    20→  Sparkles,
+    21→  Star,
+    22→} from "lucide-react";
+    23→import { categoryLabel, getLanguage } from "@/lib/forensics-config";
+    24→import { imgProxyUrl, parseFindingImages } from "@/lib/image-utils";
+    25→import type { FindingItem } from "@/lib/types";
+    26→
+    27→const MAX_ARTICLES = 12;
+    28→
+    29→type MagPage =
+    30→  | { kind: "cover"; featured: FindingItem; secondary: FindingItem[]; totalCount: number }
+    31→  | { kind: "toc"; entries: { f: FindingItem; folio: number }[] }
+    32→  | { kind: "article"; f: FindingItem; folio: number; n: number }
+    33→  | { kind: "empty" };
+    34→
+    35→interface MagazineViewProps {
+    36→  findings: FindingItem[];
+    37→  loading: boolean;
+    38→  scanning?: boolean;
+    39→  onStartScan?: () => void;
+    40→  onDeepDive: (f: FindingItem) => void;
+    41→  onToggleBookmark: (f: FindingItem) => void;
+    42→}
+    43→
+    44→function formatDate(s: string | null): string | null {
+    45→  if (!s) return null;
+    46→  const d = new Date(s);
+    47→  if (isNaN(d.getTime())) return null;
+    48→  return d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
+    49→}
+    50→
+    51→function parseKeywords(raw: string): string[] {
+    52→  try {
+    53→    const arr = JSON.parse(raw);
+    54→    return Array.isArray(arr) ? arr.slice(0, 5) : [];
+    55→  } catch {
+    56→    return [];
+    57→  }
+    58→}
+    59→
+    60→function clip(text: string, max: number): string {
+    61→  if (text.length <= max) return text;
+    62→  const cut = text.slice(0, max);
+    63→  return cut.replace(/\s+\S*$/, "") + "…";
+    64→}
+    65→
+    66→/** Öne çıkan görseli döndürür (proxy adresiyle) */
+    67→function coverImage(f: FindingItem) {
+    68→  const imgs = parseFindingImages(f.images);
+    69→  return imgs.length > 0 ? imgs[0] : null;
+    70→}
+    71→
+    72→export function MagazineView({
+    73→  findings,
+    74→  loading,
+    75→  scanning,
+    76→  onStartScan,
+    77→  onDeepDive,
+    78→  onToggleBookmark,
+    79→}: MagazineViewProps) {
+    80→  const [page, setPage] = useState(0);
+    81→  const [flip, setFlip] = useState<{ dir: "next" | "prev"; from: number; to: number } | null>(null);
+    82→  const flipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    83→  const touchX = useRef<number | null>(null);
+    84→
+    85→  // ---- Sayı bilgisi (dergi künyesi) ----
+    86→  const issue = useMemo(() => {
+    87→    const now = new Date();
+    88→    const month = now.toLocaleDateString("tr-TR", { month: "long" }).toLocaleUpperCase("tr-TR");
+    89→    const no = (now.getFullYear() - 2024) * 12 + now.getMonth() + 1;
+    90→    return { month, no, year: now.getFullYear() };
+    91→  }, []);
+    92→
+    93→  // ---- Sayfa modeli ----
+    94→  const articles = useMemo(() => findings.slice(0, MAX_ARTICLES), [findings]);
+    95→
+    96→  const pages = useMemo<MagPage[]>(() => {
+    97→    if (articles.length === 0) return [{ kind: "empty" }];
+    98→    let featIdx = articles.findIndex((a) => coverImage(a) !== null);
+    99→    if (featIdx < 0) featIdx = 0;
+   100→    const featured = articles[featIdx];
+   101→    const secondary = articles.filter((a) => a.id !== featured.id).slice(0, 3);
+   102→    const tocEntries = articles.map((f, i) => ({ f, folio: i + 2 }));
+   103→    return [
+   104→      { kind: "cover", featured, secondary, totalCount: findings.length },
+   105→      { kind: "toc", entries: tocEntries },
+   106→      ...articles.map((f, i) => ({ kind: "article" as const, f, folio: i + 2, n: i + 1 })),
+   107→    ];
+   108→  }, [articles, findings.length]);
+   109→
+   110→  const totalPages = pages.length;
+   111→
+   112→  // Filtre değişince sayfa taşarsa başa dön
+   113→  useEffect(() => {
+   114→    if (page > totalPages - 1) setPage(Math.max(0, totalPages - 1));
+   115→  }, [totalPages, page]);
+   116→
+   117→  useEffect(
+   118→    () => () => {
+   119→      if (flipTimer.current) clearTimeout(flipTimer.current);
+   120→    },
+   121→    []
+   122→  );
+   123→
+   124→  // ---- Sayfa çevirme motoru ----
+   125→  const goTo = useCallback(
+   126→    (target: number, dir?: "next" | "prev") => {
+   127→      if (flip) return;
+   128→      const clamped = Math.max(0, Math.min(totalPages - 1, target));
+   129→      if (clamped === page) return;
+   130→      const d: "next" | "prev" = dir ?? (clamped > page ? "next" : "prev");
+   131→      setFlip({ dir: d, from: page, to: clamped });
+   132→      setPage(clamped);
+   133→      if (flipTimer.current) clearTimeout(flipTimer.current);
+   134→      flipTimer.current = setTimeout(() => setFlip(null), 980);
+   135→    },
+   136→    [flip, page, totalPages]
+   137→  );
+   138→
+   139→  const goNext = useCallback(() => goTo(page + 1, "next"), [goTo, page]);
+   140→  const goPrev = useCallback(() => goTo(page - 1, "prev"), [goTo, page]);
+   141→
+   142→  // Klavye ile gezinme (form alanları hariç)
+   143→  useEffect(() => {
+   144→    const onKey = (e: KeyboardEvent) => {
+   145→      const tag = (e.target as HTMLElement | null)?.tagName;
+   146→      if (tag && ["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+   147→      if (e.key === "ArrowRight") goNext();
+   148→      else if (e.key === "ArrowLeft") goPrev();
+   149→    };
+   150→    window.addEventListener("keydown", onKey);
+   151→    return () => window.removeEventListener("keydown", onKey);
+   152→  }, [goNext, goPrev]);
+   153→
+   154→  // Dokunmatik kaydırma
+   155→  const onTouchStart = (e: React.TouchEvent) => {
+   156→    touchX.current = e.touches[0].clientX;
+   157→  };
+   158→  const onTouchEnd = (e: React.TouchEvent) => {
+   159→    if (touchX.current === null) return;
+   160→    const delta = e.changedTouches[0].clientX - touchX.current;
+   161→    touchX.current = null;
+   162→    if (delta < -48) goNext();
+   163→    else if (delta > 48) goPrev();
+   164→  };
+   165→
+   166→  // ---- Sayfa etiketi ----
+   167→  const pageLabel = useMemo(() => {
+   168→    const p = pages[page];
+   169→    if (!p) return "";
+   170→    if (p.kind === "cover") return "Kapak";
+   171→    if (p.kind === "toc") return "İçindekiler";
+   172→    if (p.kind === "empty") return "Boş Sayı";
+   173→    return `Sayfa ${p.folio}`;
+   174→  }, [pages, page]);
+   175→
+   176→  // ---- Çevirme sırasında sahnede duracak sayfa ----
+   177→  const staticIndex = flip ? (flip.dir === "next" ? flip.to : flip.from) : page;
+   178→  const leafIndex = flip ? (flip.dir === "next" ? flip.from : flip.to) : -1;
+   179→
+   180→  // ================= SAYFA ŞABLONLARI =================
+   181→
+   182→  const renderRunningHead = (center: string, folio?: number) => (
+   183→    <div className="flex items-center justify-between gap-3 border-b border-stone-900/20 pb-1.5 text-[9px] uppercase tracking-[0.24em] text-stone-600 sm:text-[10px]">
+   184→      <span className="mag-serif font-bold tracking-[0.18em] text-stone-800">KRİMİSCAN GLOBAL</span>
+   185→      <span className="min-w-0 flex-1 truncate text-center">{center}</span>
+   186→      <span className="mag-serif">{folio ?? ""}</span>
+   187→    </div>
+   188→  );
+   189→
+   190→  const renderStars = (importance: number, size = "h-2.5 w-2.5") => (
+   191→    <span className="inline-flex items-center gap-0.5" title={`Önem puanı: ${importance}/5`}>
+   192→      {Array.from({ length: 5 }).map((_, i) => (
+   193→        <Star
+   194→          key={i}
+   195→          className={`${size} ${i < importance ? "fill-amber-700 text-amber-700" : "text-stone-400"}`}
+   196→        />
+   197→      ))}
+   198→    </span>
+   199→  );
+   200→
+   201→  const renderCover = (p: Extract<MagPage, { kind: "cover" }>) => {
+   202→    const featImg = coverImage(p.featured);
+   203→    return (
+   204→      <div className="mag-page-content flex h-full flex-col px-4 pb-4 pt-4 sm:px-7 sm:pb-6 sm:pt-6">
+   205→        {/* Üst şerit */}
+   206→        <div className="flex items-center justify-between border-b border-stone-900/25 pb-1.5 text-[8px] uppercase tracking-[0.2em] text-stone-700 sm:text-[9px]">
+   207→          <span>Adli Bilimler & Olay Yeri İncelemesi</span>
+   208→          <span className="hidden sm:inline">Türkiyenin Küresel İzleme Dergisi</span>
+   209→          <span>{issue.year}</span>
+   210→        </div>
+   211→
+   212→        {/* Ana manşet */}
+   213→        <h1 className="mag-serif mt-2 text-[clamp(1.9rem,6vw,3.1rem)] font-black leading-[0.95] tracking-tight text-stone-900">
+   214→          KRİMİSCAN <span className="text-amber-700">GLOBAL</span>
+   215→        </h1>
+   216→        <div className="mt-1.5 flex items-center justify-between border-y-2 border-stone-900/80 py-1 text-[8px] font-bold uppercase tracking-[0.18em] text-stone-800 sm:text-[10px]">
+   217→          <span>
+   218→            Sayı {issue.no} · {issue.month} {issue.year}
+   219→          </span>
+   220→          <span className="text-red-800">{p.totalCount} konu tarandı</span>
+   221→          <span>Ücretsiz E-Dergi</span>
+   222→        </div>
+   223→
+   224→        {/* Kapak görseli */}
+   225→        <button
+   226→          type="button"
+   227→          onClick={() => onDeepDive(p.featured)}
+   228→          className="group relative mt-3 block w-full overflow-hidden rounded-sm border border-stone-900/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+   229→          title="Kapak haberini derin analizle incele"
+   230→        >
+   231→          {featImg ? (
+   232→            /* eslint-disable-next-line @next/next/no-img-element */
+   233→            <img
+   234→              src={imgProxyUrl(featImg.url)}
+   235→              alt={featImg.alt || p.featured.trTitle}
+   236→              className="h-[clamp(140px,26vh,270px)] w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+   237→              onError={(e) => (e.currentTarget.style.visibility = "hidden")}
+   238→            />
+   239→          ) : (
+   240→            <div className="flex h-[clamp(120px,20vh,220px)] w-full items-center justify-center bg-stone-900/[0.06]">
+   241→              <Fingerprint className="h-12 w-12 text-stone-400" />
+   242→            </div>
+   243→          )}
+   244→          <span className="mag-tag-red absolute left-2 top-2">Kapak Haberi</span>
+   245→        </button>
+   246→
+   247→        {/* Kapak başlığı */}
+   248→        <h2 className="mag-serif mt-3 line-clamp-3 text-[clamp(1.05rem,2.9vw,1.65rem)] font-bold leading-tight text-stone-900">
+   249→          {p.featured.trTitle}
+   250→        </h2>
+   251→        <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-stone-700 sm:text-[13px]">
+   252→          {clip(p.featured.trSummary, 210)}
+   253→        </p>
+   254→
+   255→        {/* Yan başlıklar şeridi */}
+   256→        <div className="mt-auto grid grid-cols-3 gap-3 border-t border-stone-900/20 pt-3">
+   257→          {p.secondary.map((s) => {
+   258→            const sImg = coverImage(s);
+   259→            return (
+   260→              <button
+   261→                key={s.id}
+   262→                type="button"
+   263→                onClick={() => onDeepDive(s)}
+   264→                className="group text-left focus:outline-none"
+   265→                title="Derin analiz"
+   266→              >
+   267→                <span className="mag-kicker block !text-[8px] sm:!text-[9px]">
+   268→                  {categoryLabel(s.category).split(" ")[0]}
+   269→                </span>
+   270→                <span className="mag-serif mt-1 line-clamp-3 block text-[11px] font-semibold leading-snug text-stone-900 group-hover:text-amber-800 sm:text-[12.5px]">
+   271→                  {s.trTitle}
+   272→                </span>
+   273→                {sImg && (
+   274→                  /* eslint-disable-next-line @next/next/no-img-element */
+   275→                  <img
+   276→                    src={imgProxyUrl(sImg.url)}
+   277→                    alt=""
+   278→                    loading="lazy"
+   279→                    className="mt-1 h-10 w-full rounded-sm object-cover opacity-90 group-hover:opacity-100 sm:h-12"
+   280→                    onError={(e) => (e.currentTarget.style.display = "none")}
+   281→                  />
+   282→                )}
+   283→              </button>
+   284→            );
+   285→          })}
+   286→        </div>
+   287→      </div>
+   288→    );
+   289→  };
+   290→
+   291→  const renderToc = (p: Extract<MagPage, { kind: "toc" }>) => (
+   292→    <div className="mag-page-content flex h-full flex-col px-4 pb-4 pt-4 sm:px-7 sm:pb-6 sm:pt-6">
+   293→      {renderRunningHead("Bu Sayıda")}
+   294→      <div className="mt-3 flex items-baseline justify-between">
+   295→        <h2 className="mag-serif text-[clamp(1.4rem,4vw,2.2rem)] font-black tracking-tight text-stone-900">
+   296→          İçindekiler
+   297→        </h2>
+   298→        <span className="text-[9px] uppercase tracking-[0.2em] text-stone-600">
+   299→          Sayı {issue.no} · {issue.month}
+   300→        </span>
+   301→      </div>
+   302→      <hr className="mag-rule mt-2" />
+   303→
+   304→      <div className="no-scrollbar mt-1 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+   305→        {p.entries.map((e, i) => (
+   306→          <button
+   307→            key={e.f.id}
+   308→            type="button"
+   309→            onClick={() => goTo(i + 2, "next")}
+   310→            className="group flex w-full items-baseline gap-2.5 rounded-sm border-b border-dotted border-stone-500/50 py-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-700"
+   311→          >
+   312→            <span className="mag-serif w-7 shrink-0 text-right text-base font-bold text-amber-800 sm:text-lg">
+   313→              {String(i + 1).padStart(2, "0")}
+   314→            </span>
+   315→            <span className="min-w-0 flex-1">
+   316→              <span className="block text-[8px] font-bold uppercase tracking-[0.18em] text-red-900/80 sm:text-[9px]">
+   317→                {categoryLabel(e.f.category)}
+   318→              </span>
+   319→              <span className="mag-serif line-clamp-1 block text-[13px] font-semibold leading-snug text-stone-900 group-hover:text-amber-800 sm:text-[15px]">
+   320→                {e.f.trTitle}
+   321→              </span>
+   322→            </span>
+   323→            <span className="mag-serif shrink-0 text-sm font-bold text-stone-700 group-hover:text-amber-800">
+   324→              {e.folio}
+   325→            </span>
+   326→          </button>
+   327→        ))}
+   328→      </div>
+   329→
+   330→      {/* Künye */}
+   331→      <div className="mt-3 rounded-sm border border-stone-900/25 bg-stone-900/[0.05] p-2.5 text-[9.5px] leading-relaxed text-stone-700 sm:text-[10.5px]">
+   332→        <span className="font-bold uppercase tracking-[0.16em] text-stone-900">Künye — </span>
+   333→        KrimiScan Global E-Dergi. {issue.year} yılı yayını; dünya genelinde{" "}
+   334→        <b>{findings.length}</b> konu derlenmiş, yapay zekâ ile Türkçeye çevrilmiş ve önem
+   335→        puanlaması yapılmıştır. Yayın Türü: Sürekli Güncellenen Dijital Baskı.
+   336→      </div>
+   337→    </div>
+   338→  );
+   339→
+   340→  const renderArticle = (p: Extract<MagPage, { kind: "article" }>) => {
+   341→    const f = p.f;
+   342→    const img = coverImage(f);
+   343→    const keywords = parseKeywords(f.keywords);
+   344→    const langInfo = getLanguage(f.language);
+   345→    const date = formatDate(f.publishedDate);
+   346→    const body = f.trSummary && f.trSummary.trim().length > 0
+   347→      ? clip(f.trSummary.trim(), 860)
+   348→      : "Bu haber için Türkçe özet metni bu baskıda yer almıyor. Derin analiz panelinden yapay zekâ değerlendirmesini okuyabilir veya orijinal kaynağa gidebilirsiniz.";
+   349→
+   350→    return (
+   351→      <div className="mag-page-content flex h-full flex-col px-4 pb-4 pt-4 sm:px-7 sm:pb-5 sm:pt-5">
+   352→        {renderRunningHead(categoryLabel(f.category), p.folio)}
+   353→
+   354→        {/* Kicker satırı */}
+   355→        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+   356→          <span className="mag-kicker">{categoryLabel(f.category)}</span>
+   357→          {f.isNewTech && (
+   358→            <span className="mag-tag-red inline-flex items-center gap-1">
+   359→              <Sparkles className="h-2.5 w-2.5" /> Yenilik
+   360→            </span>
+   361→          )}
+   362→          {renderStars(f.importance)}
+   363→          {parseFindingImages(f.images).length > 1 && (
+   364→            <span className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-stone-600">
+   365→              <ImagesIcon className="h-3 w-3" /> {parseFindingImages(f.images).length} görsel
+   366→            </span>
+   367→          )}
+   368→        </div>
+   369→
+   370→        {/* Başlık + spot */}
+   371→        <h2 className="mag-serif mt-1.5 line-clamp-3 text-[clamp(1.15rem,3.2vw,1.85rem)] font-bold leading-[1.12] tracking-tight text-stone-900">
+   372→          {f.trTitle}
+   373→        </h2>
+   374→
+   375→        {/* Künye satırı (byline) */}
+   376→        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] uppercase tracking-[0.14em] text-stone-600 sm:text-[10px]">
+   377→          <span className="font-bold text-stone-900">{f.sourceName}</span>
+   378→          <span aria-hidden>·</span>
+   379→          <span>{langInfo ? `${langInfo.flag} ${langInfo.name}` : f.language.toUpperCase()}</span>
+   380→          {date && (
+   381→            <>
+   382→              <span aria-hidden>·</span>
+   383→              <span>{date}</span>
+   384→            </>
+   385→          )}
+   386→          <span aria-hidden>·</span>
+   387→          <span className="italic normal-case tracking-normal text-stone-600">
+   388→            yapay zekâ ile Türkçeleştirilmiştir
+   389→          </span>
+   390→        </div>
+   391→
+   392→        {/* Makale görseli */}
+   393→        {img && (
+   394→          <figure className="mt-2.5">
+   395→            {/* eslint-disable-next-line @next/next/no-img-element */}
+   396→            <img
+   397→              src={imgProxyUrl(img.url)}
+   398→              alt={img.alt || f.trTitle}
+   399→              loading="lazy"
+   400→              className="h-[clamp(110px,21vh,215px)] w-full border border-stone-900/25 object-cover"
+   401→              onError={(e) => (e.currentTarget.style.display = "none")}
+   402→            />
+   403→            {(img.alt || f.originalTitle) && (
+   404→              <figcaption className="mag-serif mt-1 truncate text-[9.5px] italic text-stone-600 sm:text-[10.5px]">
+   405→                {img.alt || f.originalTitle}
+   406→              </figcaption>
+   407→            )}
+   408→          </figure>
+   409→        )}
+   410→
+   411→        {/* Gövde — iki kolon, baş harf süslü */}
+   412→        <div className="mag-body mt-2.5 flex min-h-0 flex-1 flex-col overflow-hidden">
+   413→          <p className="mag-cols mag-serif columns-1 text-[11.5px] leading-[1.62] text-stone-800 sm:columns-2 sm:text-[12.5px]">
+   414→            <span className="mag-dropcap block">{body}</span>
+   415→          </p>
+   416→          {/* Baskı sonu işareti */}
+   417→          <div className="mt-auto flex items-center justify-center gap-2 pt-2 text-stone-500" aria-hidden>
+   418→            <span className="h-px w-10 bg-stone-500/50" />
+   419→            <span className="text-[10px]">◆</span>
+   420→            <span className="h-px w-10 bg-stone-500/50" />
+   421→          </div>
+   422→          {/* Kişisel not — kenar notu */}
+   423→          {f.notes && (
+   424→            <div className="mt-2 rounded-sm border-l-2 border-amber-700 bg-amber-100/50 px-2.5 py-1.5 text-[10.5px] italic leading-snug text-stone-800">
+   425→              <b className="not-italic">Okur Notu:</b> {clip(f.notes, 160)}
+   426→            </div>
+   427→          )}
+   428→        </div>
+   429→
+   430→        {/* Anahtar kavramlar */}
+   431→        {keywords.length > 0 && (
+   432→          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+   433→            <span className="text-[8.5px] font-bold uppercase tracking-[0.2em] text-stone-600">
+   434→              Anahtar:
+   435→            </span>
+   436→            {keywords.map((kw, i) => (
+   437→              <span
+   438→                key={i}
+   439→                className="rounded-sm border border-stone-900/25 px-1.5 py-0.5 text-[9px] font-medium text-stone-700 sm:text-[9.5px]"
+   440→              >
+   441→                {kw}
+   442→              </span>
+   443→            ))}
+   444→          </div>
+   445→        )}
+   446→
+   447→        {/* Sayfa içi eylemler */}
+   448→        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-stone-900/20 pt-2.5">
+   449→          <button
+   450→            type="button"
+   451→            onClick={() => onDeepDive(f)}
+   452→            className="inline-flex items-center gap-1.5 rounded-sm bg-stone-900 px-3 py-1.5 text-[11px] font-bold text-amber-50 transition-colors hover:bg-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+   453→          >
+   454→            <Microscope className="h-3.5 w-3.5 text-amber-300" />
+   455→            Derin Analiz
+   456→          </button>
+   457→          <div className="flex items-center gap-1.5">
+   458→            <button
+   459→              type="button"
+   460→              onClick={() => onToggleBookmark(f)}
+   461→              className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-[11px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 ${
+   462→                f.bookmarked
+   463→                  ? "border-amber-700/60 bg-amber-100/60 text-amber-800"
+   464→                  : "border-stone-900/25 text-stone-700 hover:bg-stone-900/10"
+   465→              }`}
+   466→              title={f.bookmarked ? "Yer iminden çıkar" : "Yer imine ekle"}
+   467→            >
+   468→              <Bookmark className={`h-3.5 w-3.5 ${f.bookmarked ? "fill-amber-700" : ""}`} />
+   469→              <span className="hidden sm:inline">{f.bookmarked ? "İşaretli" : "İşaretle"}</span>
+   470→            </button>
+   471→            <a
+   472→              href={f.url}
+   473→              target="_blank"
+   474→              rel="noopener noreferrer"
+   475→              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-stone-900/25 px-2.5 text-[11px] font-semibold text-stone-700 transition-colors hover:bg-stone-900/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+   476→              title="Orijinal makaleyi aç"
+   477→            >
+   478→              <ExternalLink className="h-3.5 w-3.5" />
+   479→              <span className="hidden md:inline">Kaynak</span>
+   480→            </a>
+   481→          </div>
+   482→        </div>
+   483→      </div>
+   484→    );
+   485→  };
+   486→
+   487→  const renderEmpty = () => (
+   488→    <div className="mag-page-content flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
+   489→      <div className="rounded-full border border-stone-900/25 p-5">
+   490→        <Fingerprint className="h-10 w-10 text-stone-500" />
+   491→      </div>
+   492→      <h2 className="mag-serif text-2xl font-black tracking-tight text-stone-900">
+   493→        Bu Sayı Henüz Boş
+   494→      </h2>
+   495→      <p className="max-w-sm text-[13px] leading-relaxed text-stone-700">
+   496→        Küresel taramayı başlattığınızda dünyanın {""}
+   497→        dillerindeki olay yeri inceleme gelişmeleri toplanır, Türkçeleştirilir ve bu derginin
+   498→        sayfalarına yerleşir.
+   499→      </p>
+   500→      {onStartScan && (
+   501→        <button
+   502→          type="button"
+   503→          onClick={onStartScan}
+   504→          disabled={scanning}
+   505→          className="inline-flex items-center gap-2 rounded-sm bg-stone-900 px-5 py-2.5 text-sm font-bold text-amber-50 transition-colors hover:bg-stone-800 disabled:opacity-60"
+   506→        >
+   507→          {scanning ? (
+   508→            <Loader2 className="h-4 w-4 animate-spin text-amber-300" />
+   509→          ) : (
+   510→            <ScanSearch className="h-4 w-4 text-amber-300" />
+   511→          )}
+   512→          {scanning ? "Tarama sürüyor…" : "İlk Taramayı Başlat"}
+   513→        </button>
+   514→      )}
+   515→    </div>
+   516→  );
+   517→
+   518→  const renderPageInner = (p: MagPage) => {
+   519→    switch (p.kind) {
+   520→      case "cover":
+   521→        return renderCover(p);
+   522→      case "toc":
+   523→        return renderToc(p);
+   524→      case "article":
+   525→        return renderArticle(p);
+   526→      case "empty":
+   527→        return renderEmpty();
+   528→    }
+   529→  };
+   530→
+   531→  const renderLoadingPage = () => (
+   532→    <div className="flex h-full flex-col gap-3 px-7 pb-6 pt-6">
+   533→      <div className="h-3 w-1/3 animate-pulse rounded bg-stone-900/15" />
+   534→      <div className="h-8 w-3/4 animate-pulse rounded bg-stone-900/15" />
+   535→      <div className="h-40 w-full animate-pulse rounded bg-stone-900/10" />
+   536→      <div className="h-3 w-full animate-pulse rounded bg-stone-900/10" />
+   537→      <div className="h-3 w-full animate-pulse rounded bg-stone-900/10" />
+   538→      <div className="h-3 w-5/6 animate-pulse rounded bg-stone-900/10" />
+   539→      <div className="h-3 w-2/3 animate-pulse rounded bg-stone-900/10" />
+   540→    </div>
+   541→  );
+   542→
+   543→  // ================= SAHNE =================
+   544→
+   545→  return (
+   546→    <section className="relative overflow-x-clip" aria-label="KrimiScan Global e-dergi">
+   547→      {/* Üst kontrol şeridi */}
+   548→      <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-1 pb-3">
+   549→        <div className="flex min-w-0 items-center gap-2 text-xs text-slate-400">
+   550→          <Fingerprint className="h-4 w-4 shrink-0 text-amber-400" />
+   551→          <span className="truncate">
+   552→            <b className="text-slate-200">E-Dergi Baskısı</b>
+   553→            <span className="hidden sm:inline"> · {findings.length} konu · sayfa çevirmek için kenarlara tıklayın veya ← → tuşlarını kullanın</span>
+   554→          </span>
+   555→        </div>
+   556→        <div className="flex shrink-0 items-center gap-1.5">
+   557→          <button
+   558→            type="button"
+   559→            onClick={goPrev}
+   560→            disabled={page === 0 || !!flip}
+   561→            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-amber-500/50 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-35"
+   562→            aria-label="Önceki sayfa"
+   563→          >
+   564→            <ChevronLeft className="h-4 w-4" />
+   565→          </button>
+   566→          <span className="mag-serif min-w-[86px] text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200/90">
+   567→            {pageLabel}
+   568→          </span>
+   569→          <button
+   570→            type="button"
+   571→            onClick={goNext}
+   572→            disabled={page >= totalPages - 1 || !!flip}
+   573→            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-amber-500/50 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-35"
+   574→            aria-label="Sonraki sayfa"
+   575→          >
+   576→            <ChevronRight className="h-4 w-4" />
+   577→          </button>
+   578→        </div>
+   579→      </div>
+   580→
+   581→      {/* Sahne — koyu masa üzerinde krem kâğıt */}
+   582→      <div className="mx-auto w-full max-w-3xl px-1">
+   583→        <div
+   584→          className="mag-frame relative h-[min(76vh,840px)] min-h-[540px] w-full sm:aspect-[3/4] sm:h-auto sm:max-h-[840px] sm:w-auto sm:min-w-0 sm:mx-auto"
+   585→          onTouchStart={onTouchStart}
+   586→          onTouchEnd={onTouchEnd}
+   587→        >
+   588→          {/* Alt statik sayfa */}
+   589→          <div className="mag-page absolute inset-0 z-10" key={`static-${staticIndex}`}>
+   590→            {loading
+   591→              ? renderLoadingPage()
+   592→              : staticIndex >= 0 && staticIndex < totalPages
+   593→                ? renderPageInner(pages[staticIndex])
+   594→                : renderEmpty()}
+   595→          </div>
+   596→
+   597→          {/* Çevirme gölgesi */}
+   598→          {flip && <div className="mag-underglow active" />}
+   599→
+   600→          {/* Çevrilen yaprak */}
+   601→          {flip && leafIndex >= 0 && leafIndex < totalPages && (
+   602→            <div className={`mag-leaf ${flip.dir === "next" ? "leaf-next" : "leaf-prev"}`}>
+   603→              <div className="mag-leaf-face mag-leaf-front">
+   604→                <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
+   605→                <div className="mag-leaf-shade" />
+   606→              </div>
+   607→              <div className="mag-leaf-face mag-leaf-back">
+   608→                <div className="mag-leaf-shade" />
+   609→              </div>
+   610→            </div>
+   611→          )}
+   612→
+   613→          {/* Kenar tıklama bölgeleri (çevirme kısayolu) */}
+   614→          {!loading && !flip && (
+   615→            <>
+   616→              <button
+   617→                type="button"
+   618→                onClick={goPrev}
+   619→                disabled={page === 0}
+   620→                className="absolute bottom-[18%] left-0 top-0 z-20 w-[8%] cursor-w-resize rounded-l-md focus:outline-none disabled:cursor-default"
+   621→                aria-label="Önceki sayfaya çevir"
+   622→              />
+   623→              <button
+   624→                type="button"
+   625→                onClick={goNext}
+   626→                disabled={page >= totalPages - 1}
+   627→                className="absolute bottom-[18%] right-0 top-0 z-20 w-[8%] cursor-e-resize rounded-r-md focus:outline-none disabled:cursor-default"
+   628→                aria-label="Sonraki sayfaya çevir"
+   629→              />
+   630→            </>
+   631→          )}
+   632→        </div>
+   633→
+   634→        {/* Alt ilerleme çubuğu */}
+   635→        <div className="mx-auto mt-4 flex w-full max-w-3xl items-center gap-3">
+   636→          <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-800">
+   637→            <div
+   638→              className="h-full rounded-full bg-amber-500 transition-all duration-500"
+   639→              style={{ width: `${((page + 1) / totalPages) * 100}%` }}
+   640→            />
+   641→          </div>
+   642→          <span className="shrink-0 text-[11px] tabular-nums text-slate-400">
+   643→            {page + 1} / {totalPages}
+   644→          </span>
+   645→        </div>
+   646→      </div>
+   647→    </section>
+   648→  );
+   649→}
+   650→

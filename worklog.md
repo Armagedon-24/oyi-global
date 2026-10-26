@@ -155,3 +155,26 @@ Stage Summary:
 - Uygulama ana deneyimi artık E-Dergi: bulgular dergi sayfalarında (Kapak → İçindekiler → 12 makale), sayfa geçişlerinde 3D sayfa çevirme animasyonu (klavye/dokunma/kenar tıklama/ok butonları)
 - Tüm işlevler korundu: derin analiz + görsel galerisi, yer imi, okundu, notlar, filtreler, arama, tarama paneli; Kart ve Zaman Çizelgesi görünümleri alternatif olarak duruyor
 - Değişen dosyalar: globals.css, magazine-view.tsx (yeni), page.tsx; scripts/restart-server.sh (yeni), scripts/verify-magazine.sh + verify-magazine2.sh (yeni)
+
+---
+Task ID: 8
+Agent: main-agent (Z.ai)
+Task: "Sayfa değişim animasyonu esneyerek sağ alt köşeden çevrilsin + makaleye Tam Oku butonu (büyük açılan)"
+
+Work Log:
+- globals.css: sayfa çevirme koreografisi baştan yazıldı — magFlipNext/magFlipPrev artık 7 aşamalı: köşe kavrama (hazırlık, rotateZ+scale gerilmesi) → bükülerek savrulma → hedef açıyı aşma (-190.5°/+9.5° overshoot) → çift yaylanarak oturma; süre 0.95s→1.12s
+- Yeni .mag-corner-curl katmanı: parmak ucunun bastığı sağ alt köşede büyüyüp solan radyal karartı; keyframe çevirmede .leaf-next/.leaf-prev ile senkron, sürüklemede inline opacity (bend = sin(π·p))
+- Köşe tutamakları (.mag-ear-right/.mag-ear-left): clip-path köpek kulığı üçgeni, grab imleci, 4.6s'lik "çevir beni" nefes animasyonu, hover'da büyüme; touch-action:none
+- magazine-view.tsx: köşeden sürükleme motoru eklendi — pointerdown (setPointerCapture) → rAF-throttled pointermove ile yaprak açısı parmağı izler (leafTransform: rotateY + bend'e bağlı rotateZ/translate/scale esnemesi) → pointerup'ta p≥0.34 ise WAAPI ile 400ms'de tamamlayıp commit, değilse 520ms'de overshoat'lu yaylanarak geri döner; hareketsiz bırakma = tıklama sayılır (click olayı çevirir)
+- Alt sayfa haritalaması sürüklemede de korundu (next: yaprak=from/altta=to; prev: tersi), swipe (touch) ile köşe sürüklemesi çakışması lastDragAt zaman damgasıyla engellendi
+- Klavye okları ve nav butonları flip||drag||reading durumlarında kilitlendi; okuma penceresi açıkken ok tuşları sayfa çevirmiyor (doğrulandı)
+- full-read-dialog.tsx (yeni): Tam Oku büyük okuma penceresi — 940×92dvh sabit ortalanmış Dialog, krem kâğıt gövde, tam metin (dergi sayfasındaki 860 karakterlik kırpmasız, paragraf bölünmeli, md+ 2 kolon + drop cap), tüm makale görselleri galerisi + tam ekran lightbox (orijinale bağlantı), okur notu, anahtar kavramlar, Derin Analiz/İşaretle/Orijinal Kaynak eylemleri
+- MAKALE sayfalarına "Tam Oku" butonu (çerçeveli baskı stili) + metin sığmadığında "Tam Oku ile büyük açın →" italik kısayolu eklendi
+- KRİTİK CSS DERSİ: .mag-page sınıfı position:relative tanımlar; katmansız (unlayered) kural Tailwind utility'sini geçtiği için DialogContent'e doğrudan uygulanınca fixed konumlanma bozuldu (pencere sayfa akışına düştü). Çözüm: kâğıt görünüm iç sarmalayıcı div'e taşındı; DialogContent bg-transparent/border-0/p-0. Ayrıca base sm:max-w-lg 512px kilitini kırmak için max-w-[calc(100vw-1rem)]! (TW4 sonek önemli) gerekti
+- Doğrulama (agent-browser, sentetik PointerEvent zinciri ayrı görevlerde): tuşla çevirme magFlipNext 1.12s uygulanıyor + orta karede bükülme görünür; sağ kulaktan sürükle-commit Kapak→İçindekiler; sol kulaktan geri İçindekiler→Kapak (yaprak -180°'den, eğrilstirilmiş kare 12'de yakalandı); kısa sürükleme yaylanarak geri döndü (sayfa değişmedi); Tam Oku 940×828 (x=250,y=36) ortalanmış, tam metin+galeri+lightbox (img yüklü), pencere açıkken ok tuşu çevirmiyor; mobil 390px pencere 367px sığıyor, scrollW=390; konsol hatası yok
+- Ekran görüntüleri: download/kose-cevirme-kontrol/01-16 PNG
+
+Stage Summary:
+- Çevirme artık "sağ alt köşeden tutup esneyerek çevirme" hissi: tuş/klavye/kenar tıklamasında esnek anahtar kare animasyonu, kulaktan sürüklemekte parmağı izleyip bırakınca tamamlayan/yaylanan gerçek etkileşim
+- Makalelerde Tam Oku butonu: tam metin + tüm görseller + lightbox içeren büyük okuma penceresi
+- Değişen dosyalar: globals.css, magazine-view.tsx, full-read-dialog.tsx (yeni); scripts/verify-corner-flip*.sh + verify-fullread.sh (yeni)
