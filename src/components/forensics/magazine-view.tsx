@@ -16,7 +16,6 @@ import {
   Fingerprint,
   Images as ImagesIcon,
   Loader2,
-  Microscope,
   ScanSearch,
   Sparkles,
   Star,
@@ -50,6 +49,12 @@ function leafTransform(ds: { dir: "next" | "prev"; p: number }): string {
   return `rotateY(${angle.toFixed(2)}deg) rotateZ(${rz.toFixed(2)}deg) translate3d(${tx.toFixed(2)}%, ${ty.toFixed(2)}%, 0) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
 }
 
+/** Sürüklemede dış yarı yaprağın faz farkıyla katlanması (kâğıt kırışması) */
+function foldTransform(ds: { p: number }): string {
+  const bend = Math.sin(Math.PI * ds.p);
+  return `rotateY(${(-bend * 34).toFixed(2)}deg)`;
+}
+
 type MagPage =
   | { kind: "cover"; featured: FindingItem; secondary: FindingItem[]; totalCount: number }
   | { kind: "toc"; entries: { f: FindingItem; folio: number }[] }
@@ -61,7 +66,6 @@ interface MagazineViewProps {
   loading: boolean;
   scanning?: boolean;
   onStartScan?: () => void;
-  onDeepDive: (f: FindingItem) => void;
   onToggleBookmark: (f: FindingItem) => void;
 }
 
@@ -98,7 +102,6 @@ export function MagazineView({
   loading,
   scanning,
   onStartScan,
-  onDeepDive,
   onToggleBookmark,
 }: MagazineViewProps) {
   const [page, setPage] = useState(0);
@@ -109,6 +112,7 @@ export function MagazineView({
   const touchX = useRef<number | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const leafRef = useRef<HTMLDivElement | null>(null);
+  const foldRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const dragStartX = useRef(0);
   const dragWidth = useRef(640);
@@ -308,6 +312,31 @@ export function MagazineView({
       } catch {
         done();
       }
+      // Dış yarı (katlama) yaprakla birlikte eşzamanlı oturur — kâğıt bükülmesi
+      const foldEl = foldRef.current;
+      if (foldEl) {
+        const foldCurrent = foldTransform(ds);
+        const foldKf: Keyframe[] = commit
+          ? [
+              { transform: foldCurrent, offset: 0 },
+              { transform: "rotateY(-15deg)", offset: 0.5 },
+              { transform: "rotateY(0deg)", offset: 1 },
+            ]
+          : [
+              { transform: foldCurrent, offset: 0 },
+              { transform: "rotateY(-24deg)", offset: 0.5 },
+              { transform: "rotateY(0deg)", offset: 1 },
+            ];
+        try {
+          foldEl.animate(foldKf, {
+            duration: dur,
+            easing: "cubic-bezier(0.34, 0.9, 0.34, 1)",
+            fill: "forwards",
+          });
+        } catch {
+          /* katlama animasyonu opsiyonel */
+        }
+      }
     };
     const onUp = () => {
       const ds = dragRef.current;
@@ -404,12 +433,12 @@ export function MagazineView({
           <span>Ücretsiz E-Dergi</span>
         </div>
 
-        {/* Kapak görseli */}
+        {/* Kapak görseli — tıklayınca tam makale okuma penceresi */}
         <button
           type="button"
-          onClick={() => onDeepDive(p.featured)}
+          onClick={() => setReading(p.featured)}
           className="group relative mt-3 block w-full overflow-hidden rounded-sm border border-stone-900/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
-          title="Kapak haberini derin analizle incele"
+          title="Kapak haberini Tam Oku ile oku"
         >
           {featImg ? (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -443,9 +472,9 @@ export function MagazineView({
               <button
                 key={s.id}
                 type="button"
-                onClick={() => onDeepDive(s)}
+                onClick={() => setReading(s)}
                 className="group text-left focus:outline-none"
-                title="Derin analiz"
+                title="Tam Oku ile aç"
               >
                 <span className="mag-kicker block !text-[8px] sm:!text-[9px]">
                   {categoryLabel(s.category).split(" ")[0]}
@@ -648,15 +677,6 @@ export function MagazineView({
               <BookOpenText className="h-3.5 w-3.5" />
               Tam Oku
             </button>
-            <button
-              type="button"
-              onClick={() => onDeepDive(f)}
-              className="inline-flex items-center gap-1.5 rounded-sm bg-stone-900 px-3 py-1.5 text-[11px] font-bold text-amber-50 transition-colors hover:bg-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
-            >
-              <Microscope className="h-3.5 w-3.5 text-amber-300" />
-              <span className="hidden sm:inline">Derin Analiz</span>
-              <span className="sm:hidden">Analiz</span>
-            </button>
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -786,7 +806,9 @@ export function MagazineView({
       <div className="mx-auto w-full max-w-3xl px-1">
         <div
           ref={frameRef}
-          className={`mag-frame relative h-[min(76vh,840px)] min-h-[540px] w-full sm:aspect-[3/4] sm:h-auto sm:max-h-[840px] sm:w-auto sm:min-w-0 sm:mx-auto ${drag ? "mag-dragging" : ""}`}
+          className={`mag-frame relative h-[min(76vh,840px)] min-h-[540px] w-full sm:aspect-[3/4] sm:h-auto sm:max-h-[840px] sm:w-auto sm:min-w-0 sm:mx-auto ${
+            drag ? "mag-dragging" : ""
+          } ${flip ? (flip.dir === "next" ? "mag-flipping" : "mag-flipping-prev") : ""}`}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
         >
@@ -802,6 +824,11 @@ export function MagazineView({
           {/* Çevirme gölgesi */}
           {flip && <div className="mag-underglow active" />}
 
+          {/* Hedef sayfada yönü izleyen gölge süpürmesi */}
+          {flip && (
+            <div className={`mag-under-sweep ${flip.dir === "next" ? "leaf-sweep-next" : "leaf-sweep-prev"}`} />
+          )}
+
           {/* Sürükleme gölgesi — bükülmeyle yoğunlaşır */}
           {drag && (
             <div
@@ -813,30 +840,53 @@ export function MagazineView({
             />
           )}
 
-          {/* Çevrilen yaprak (tuş / klavye / kenar tıklaması) */}
+          {/* Çevrilen yaprak (tuş / klavye / kenar tıklaması) — iki panelli:
+              sırt yarısı sabit, dış yarısı faz farkıyla katlanıp esner */}
           {flip && leafIndex >= 0 && leafIndex < totalPages && (
             <div className={`mag-leaf ${flip.dir === "next" ? "leaf-next" : "leaf-prev"}`}>
               <div className="mag-leaf-face mag-leaf-front">
                 <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
                 <div className="mag-leaf-shade" />
-                <div className="mag-corner-curl" />
               </div>
               <div className="mag-leaf-face mag-leaf-back">
                 <div className="mag-leaf-shade" />
               </div>
+              <div className="mag-fold">
+                <div className="mag-fold-face mag-fold-front">
+                  <div className="mag-fold-content">
+                    <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
+                  </div>
+                  <div className="mag-fold-crease" />
+                  <div className="mag-corner-curl" />
+                </div>
+                <div className="mag-fold-face mag-fold-back">
+                  <div className="mag-fold-crease back" />
+                </div>
+              </div>
             </div>
           )}
 
-          {/* Sürükleme yaprağı — açı parmağı izler */}
+          {/* Sürükleme yaprağı — açı parmağı izler, dış yarı kâğıt gibi kırışır */}
           {drag && leafIndex >= 0 && leafIndex < totalPages && (
             <div className="mag-leaf" ref={leafRef} style={{ transform: leafTransform(drag) }}>
               <div className="mag-leaf-face mag-leaf-front">
                 <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
                 <div className="mag-leaf-shade" />
-                <div className="mag-corner-curl" style={{ opacity: Math.sin(Math.PI * drag.p) }} />
               </div>
               <div className="mag-leaf-face mag-leaf-back">
                 <div className="mag-leaf-shade" />
+              </div>
+              <div className="mag-fold" ref={foldRef} style={{ transform: foldTransform(drag) }}>
+                <div className="mag-fold-face mag-fold-front">
+                  <div className="mag-fold-content">
+                    <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
+                  </div>
+                  <div className="mag-fold-crease" />
+                  <div className="mag-corner-curl" style={{ opacity: Math.sin(Math.PI * drag.p) }} />
+                </div>
+                <div className="mag-fold-face mag-fold-back">
+                  <div className="mag-fold-crease back" />
+                </div>
               </div>
             </div>
           )}
@@ -917,7 +967,6 @@ export function MagazineView({
         <FullReadDialog
           finding={findings.find((x) => x.id === reading.id) ?? reading}
           onClose={() => setReading(null)}
-          onDeepDive={onDeepDive}
           onToggleBookmark={onToggleBookmark}
         />
       )}

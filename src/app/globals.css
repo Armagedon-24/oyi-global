@@ -243,13 +243,17 @@
   border-radius: 6px;
   box-shadow: 0 24px 48px -18px rgba(0, 0, 0, 0.6);
 }
+/* Yaprak iki panelli: sırt yarısı sabit, dış (sağ) yarısı faz farkıyla katlanır.
+   Sırt yarısı kat çizgisinden kırpılır — negatif paylar gölge yayılımını korur. */
 .mag-leaf-front {
   background: #f4edda;
+  clip-path: inset(-48px 50% -48px -48px);
 }
 .mag-leaf-back {
   transform: rotateY(180deg);
   background:
     linear-gradient(105deg, #efe7d1 0%, #e8dfc5 55%, #ddd1b0 100%);
+  clip-path: inset(-48px -48px -48px 50%);
 }
 /* Yaprak ön yüzü — sırt tarafı kararan gradyan */
 .mag-leaf-front .mag-leaf-shade {
@@ -302,6 +306,153 @@
   52% { opacity: 0.75; }
   76% { opacity: 0.4; }
   100% { opacity: 0; }
+}
+
+/* ---------- İki panelli kâğıt katlaması (profesyonel çevirme) ----------
+   Yaprığın dış yarısı, sırt yarısına göre faz farkıyla ek açıyla katlanır:
+   kâğıt tek düz levha değil, ortadan bükülen gerçek bir sayfa gibi okunur.
+   Kat yerinde kırışma gölgesi + ışık bandı taşır; anikeyfle senkron anahtar
+   karelerle çalışır, sürüklemede açı JS ile beslenir. */
+.mag-fold {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  will-change: transform;
+  pointer-events: none;
+}
+.leaf-next .mag-fold {
+  animation: magFoldNext 1.12s cubic-bezier(0.46, 0.06, 0.3, 0.98) forwards;
+}
+.leaf-prev .mag-fold {
+  animation: magFoldPrev 1.12s cubic-bezier(0.46, 0.06, 0.3, 0.98) forwards;
+}
+@keyframes magFoldNext {
+  0% { transform: rotateY(0deg); }
+  14% { transform: rotateY(-13deg); }
+  34% { transform: rotateY(-38deg); }
+  58% { transform: rotateY(-24deg); }
+  80% { transform: rotateY(-6deg); }
+  100% { transform: rotateY(0deg); }
+}
+@keyframes magFoldPrev {
+  0% { transform: rotateY(0deg); }
+  12% { transform: rotateY(-10deg); }
+  36% { transform: rotateY(-35deg); }
+  62% { transform: rotateY(-20deg); }
+  82% { transform: rotateY(-5deg); }
+  100% { transform: rotateY(0deg); }
+}
+
+.mag-fold-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.mag-fold-front {
+  border-radius: 0 6px 6px 0;
+  background: #f4edda;
+  box-shadow: 0 24px 48px -18px rgba(0, 0, 0, 0.55);
+}
+.mag-fold-back {
+  transform: rotateY(180deg);
+  border-radius: 6px 0 0 6px;
+  background: linear-gradient(255deg, #efe7d1 0%, #e6dcc0 55%, #d9cba8 100%);
+  box-shadow: 0 24px 48px -18px rgba(0, 0, 0, 0.55);
+}
+/* Kat yarı içeriği: tam sayfa içeriği sağ yarıya kaydırılmış halde gösterilir */
+.mag-fold-content {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 200%;
+  height: 100%;
+}
+/* Kat (kırışma) yerindeki gölge + ışık bandı — ön ve arka yüz için ayrı yön */
+.mag-fold-crease {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    rgba(34, 29, 21, 0.4),
+    rgba(34, 29, 21, 0.16) 7%,
+    rgba(255, 255, 255, 0.26) 15%,
+    rgba(255, 255, 255, 0.05) 26%,
+    transparent 40%
+  );
+}
+.mag-fold-crease.back {
+  background: linear-gradient(
+    to left,
+    rgba(34, 29, 21, 0.38),
+    rgba(34, 29, 21, 0.14) 9%,
+    rgba(255, 255, 255, 0.2) 19%,
+    transparent 42%
+  );
+}
+
+/* Hedef sayfa üzerinde yönü izleyen gölge süpürmesi — yaprağın sayfa üstündeki
+   gölgesi katlanmayla birlikte sırttan dış kenara doğru kayar */
+.mag-under-sweep {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+}
+.leaf-sweep-next {
+  background: linear-gradient(
+    to left,
+    rgba(10, 7, 2, 0.5),
+    rgba(10, 7, 2, 0.22) 30%,
+    transparent 62%
+  );
+  animation: magSweepNext 1.12s cubic-bezier(0.46, 0.06, 0.3, 0.98) forwards;
+}
+.leaf-sweep-prev {
+  background: linear-gradient(
+    to right,
+    rgba(10, 7, 2, 0.5),
+    rgba(10, 7, 2, 0.22) 30%,
+    transparent 62%
+  );
+  animation: magSweepPrev 1.12s cubic-bezier(0.46, 0.06, 0.3, 0.98) forwards;
+}
+@keyframes magSweepNext {
+  0% { opacity: 0; transform: translateX(26%); }
+  18% { opacity: 0.85; }
+  55% { opacity: 0.6; transform: translateX(-6%); }
+  100% { opacity: 0; transform: translateX(-30%); }
+}
+@keyframes magSweepPrev {
+  0% { opacity: 0; transform: translateX(-26%); }
+  18% { opacity: 0.85; }
+  55% { opacity: 0.6; transform: translateX(6%); }
+  100% { opacity: 0; transform: translateX(30%); }
+}
+
+/* Çevirme sırasında sahnenin mikro perspektif eğimi — sinematik derinlik */
+.mag-frame.mag-flipping {
+  animation: magTiltNext 1.12s ease;
+}
+.mag-frame.mag-flipping-prev {
+  animation: magTiltPrev 1.12s ease;
+}
+@keyframes magTiltNext {
+  0% { perspective-origin: 50% 42%; }
+  42% { perspective-origin: 36.5% 40%; }
+  100% { perspective-origin: 50% 42%; }
+}
+@keyframes magTiltPrev {
+  0% { perspective-origin: 50% 42%; }
+  42% { perspective-origin: 63.5% 40%; }
+  100% { perspective-origin: 50% 42%; }
 }
 
 /* Çevirme sırasında sahneye düşen yumuşak gölge */
@@ -447,6 +598,46 @@
   border-top: 1px solid rgba(34, 29, 21, 0.18);
 }
 
+/* ---------- Şık kaydırma çubuğu (Tam Oku penceresi) ----------
+   Kâğıt tonlarında ince, uçları yuvarlatılmış, üzerinde duran başparmak;
+   hover'da kehribara döner. Firefox: scrollbar-width/color; WebKit: pseudo. */
+.mag-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(146, 64, 14, 0.5) rgba(34, 29, 21, 0.05);
+}
+.mag-scroll::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+.mag-scroll::-webkit-scrollbar-track {
+  background: rgba(34, 29, 21, 0.045);
+  border-radius: 8px;
+  box-shadow: inset 0 0 3px rgba(34, 29, 21, 0.08);
+}
+.mag-scroll::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  background-color: rgba(120, 85, 30, 0.42);
+  box-shadow: inset 0 0 2px rgba(255, 255, 255, 0.35);
+}
+.mag-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(146, 64, 14, 0.72);
+}
+.mag-scroll::-webkit-scrollbar-thumb:active {
+  background-color: rgba(146, 64, 14, 0.9);
+}
+
+/* Okuma kurdelesi — soldan sarkan, okuma ilerledikçe uzayan saten şerit */
+.mag-ribbon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, #b45309 0%, #92400e 55%, #7c2d12 100%);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 7px), 0 100%);
+  box-shadow: 1px 2px 4px rgba(34, 29, 21, 0.35);
+}
+
 /* Kaydırma çubuğu gizle (içindekiler listesi vb.) */
 .no-scrollbar {
   scrollbar-width: none;
@@ -471,6 +662,11 @@
   .mag-underglow.active,
   .leaf-next .mag-corner-curl,
   .leaf-prev .mag-corner-curl,
+  .leaf-next .mag-fold,
+  .leaf-prev .mag-fold,
+  .mag-under-sweep,
+  .mag-frame.mag-flipping,
+  .mag-frame.mag-flipping-prev,
   .mag-page-content {
     animation-duration: 0.01s;
   }

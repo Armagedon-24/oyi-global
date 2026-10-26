@@ -795,7 +795,6 @@ export default function Home() {
               loading={loading}
               scanning={scanning}
               onStartScan={startScan}
-              onDeepDive={openDeepDive}
               onToggleBookmark={toggleBookmark}
             />
           ) : loading ? (

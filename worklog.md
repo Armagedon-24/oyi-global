@@ -202,3 +202,24 @@ Stage Summary:
 - Tam Oku artık derin analiz gibi çalışıyor: açılışta makale ORİJİNAL KAYNAKTAN tam metin okunuyor → paragraf yapısı korunarak Türkçeye çevriliyor → büyük dergi penceresinde kırpılmadan sunuluyor; sonuçlar önbelleğe alınıyor
 - Değişen dosyalar: schema.prisma, llm.ts, api/full-article (yeni), full-read-dialog.tsx; scripts/verify-fullread-v2/v3.sh (yeni)
 - Not: ilk tarama metni kırpması (860 karakter) dergi sayfalarında duruyor — Tam Oku penceresi artık asıl tam metin okuma alanı
+
+---
+Task ID: 10
+Agent: main-agent (Z.ai)
+Task: "Derin analiz butonunu kaldır + tam ekran okumadaki kaydırma çubuğunu şıklaştır + sayfa değişim animasyonunu profesyonelleştir"
+
+Work Log:
+- DERİN ANALİZ BUTONU KALDIRILDI: dergi makale sayfasındaki buton ve Tam Oku penceresindeki buton silindi; FullReadDialog'dan onDeepDive prop'u, MagazineView'dan onDeepDive prop'u ve Microscope import'u kaldırıldı; page.tsx'teki MagazineView çağrısı güncellendi. Kapak görseli + yan başlık şeritleri artık Tam Oku'yu açıyor (önceden derin analiz açılıyordu). Derin analiz özelliği Kart/Zaman Çizelgesi görünümlerinde yaşamaya devam ediyor (talep edilirse oralardan da kaldırılır).
+- ŞIK KAYDIRMA ÇUBUĞU: globals.css'e .mag-scroll eklendi — WebKit: 11px, şeffaf kenar hilesiyle yüzen yuvarlak başparmak (kağıt tonu rgba(120,85,30,.42)), hover'da kehribar, iç gölgeli track; Firefox: scrollbar-width/color. Tam Oku içerik kapsayıcısına uygulandı.
+- OKUMA KURDELESİ: Tam Oku kağıdının sol kenarından sarkan saten şerit (.mag-ribbon, amber gradyan + V kesim uç, clip-path); kaydırmayla %10→%92 büyüyor (onScroll → progress state). pointer-events-none, yükleniyor sırasında gizli.
+- PROFESYONEL ÇEVİRME — İKİ PANELLİ KÂĞIT KATLAMASI: yaprak artık tek düz levha değil; sırt yarısı (.mag-leaf-front/-back clip-path ile kat çizgisinden kırpılır) sabit, DIŞ YARISI (.mag-fold: left:50%, w:50%, origin left) faz farkıyla ek açıyla katlanıyor — magFoldNext/Prev anahtar kareleri yaprak animasyonuyla senkron (1.12s), sürüklemede foldTransform() açıyı parmağın ilerlemesinden besliyor (bend*sin πp × 34°), bırakışta WAAPI ile yaprakla eşzamanlı oturuyor. Kat yarısı içeriği .mag-fold-content (left:-100%, w:200%) ile sağ yarıya kaydırılmış tam sayfa; kat yerinde .mag-fold-crease kırışma gölgesi + ışık bandı (ön/arka ayrı yön).
+- IŞIK KOREOGRAFİSİ: .mag-under-sweep — hedef sayfa üzerinde yönü izleyen gölge süpürmesi (translateX 26%→-30%, opacity zarfı); .mag-frame.mag-flipping/-prev — sahnenin mikro perspektif eğimi (perspective-origin 50%→36.5%/63.5%→50%). corner-curl katmanı kat yarısına taşındı (artık kırpılmıyor). prefers-reduced-motion tüm yeni animasyonları kapsıyor.
+- Doğrulama (agent-browser): makale sayfasında "Derin Analiz" butonu 0, mikroskop ikonlu buton 0, Tam Oku yerinde; diyalogda Derin Analiz yok + kurdele %10→%92 + .mag-scroll thumb rgba(120,85,30,.42) hesaplandı; çevirme ortasında .mag-fold magFoldNext matrix3d dönerken yakalandı, geri çevirmede magFoldPrev; kulaktan sürükleme ayrı eval adımlarıyla: yaprak -111° / kat -32° eşzamanlı, bırakışta Sayfa 3'e commit; kapak tıklaması Tam Oku açıyor; mobil 390px scrollW=390; konsol hatası yok; tsc temiz.
+- TEST DERSİ: sentetik PointerEvent sürüklemesinde pointerdown+pointermove AYNI eval'de gönderilirse React henüz window listener'larını eklemeden hareketler kayboluyor (Task 8'deki "ayrı görevlerde" notunun nedeni) — verify-drag-fold.sh ayrı eval deseniyle yazıldı.
+- Ekran görüntüleri: download/profesyonel-flip-kontrol/01-09 PNG (butonsuz makale, kurdele+scrollbar, katlama ortası klavye/sürükleme, mobil).
+
+Stage Summary:
+- Dergi okuma deneyimi sadeleştirildi: tek okuma eylemi "Tam Oku" (tam makale); Derin Analiz butonları dergi yüzeylerinden kaldırıldı
+- Tam Oku penceresi şıklarlaştırıldı: kağıt tonlu özel scrollbar + okuma kurdelesi
+- Çevirme animasyonu iki panelli kâğıt katlaması + gölge süpürmesi + sahne eğimiyle profesyonel seviyeye taşındı (klavye/kenar/kulak sürüklemesi hepsinde çalışıyor)
+- Değişen dosyalar: globals.css, magazine-view.tsx, full-read-dialog.tsx, page.tsx; scripts/verify-pro-flip.sh + verify-drag-fold.sh (yeni)

@@ -13,7 +13,6 @@ import {
   ExternalLink,
   FileText,
   Loader2,
-  Microscope,
   RefreshCw,
   Star,
   X,
@@ -31,7 +30,6 @@ import type { FindingItem } from "@/lib/types";
 interface FullReadDialogProps {
   finding: FindingItem;
   onClose: () => void;
-  onDeepDive: (f: FindingItem) => void;
   onToggleBookmark: (f: FindingItem) => void;
 }
 
@@ -59,7 +57,6 @@ function formatDate(s: string | null): string | null {
 export function FullReadDialog({
   finding,
   onClose,
-  onDeepDive,
   onToggleBookmark,
 }: FullReadDialogProps) {
   const [zoom, setZoom] = useState<{ url: string; alt: string } | null>(null);
@@ -68,6 +65,7 @@ export function FullReadDialog({
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [phase, setPhase] = useState(0);
+  const [progress, setProgress] = useState(0); // okuma ilerlemesi (kurdele)
 
   const langInfo = getLanguage(finding.language);
   const date = formatDate(finding.publishedDate);
@@ -136,9 +134,17 @@ export function FullReadDialog({
     setNotice(null);
     setLoading(true);
     setPhase(0);
+    setProgress(0);
     fetchArticle(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finding.id]);
+
+  /** Kaydırma çubuğu ilerlemesini kurdeleye yansıtır */
+  const onScrollProgress = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    const max = el.scrollHeight - el.clientHeight;
+    setProgress(max > 40 ? Math.min(1, el.scrollTop / max) : 0);
+  };
 
   const paragraphs = full?.paragraphs ?? fallbackParagraphs;
   const isFullText = Boolean(full);
@@ -159,6 +165,16 @@ export function FullReadDialog({
           {/* Kâğıt gövde — mag-page sınıfı position:relative tanımladığından fixed
               konumlandırmayı ezmek için DialogContent'e değil iç sarmalayıcıya uygulanır */}
           <div className="mag-page relative flex h-full w-full flex-col overflow-hidden">
+          {/* Okuma kurdelesi — okuma ilerledikçe uzayan saten şerit */}
+          {!loading && (
+            <div
+              className="pointer-events-none absolute left-[10px] top-0 z-[5] w-[7px]"
+              style={{ height: `${10 + progress * 82}%` }}
+              aria-hidden
+            >
+              <span className="mag-ribbon" />
+            </div>
+          )}
           <span className="sr-only">
             <DialogTitle>{finding.trTitle}</DialogTitle>
             <DialogDescription>Tam makale okuma penceresi</DialogDescription>
@@ -174,7 +190,10 @@ export function FullReadDialog({
             {loading ? <Loader2 className="h-4.5 w-4.5 animate-spin" /> : <X className="h-4.5 w-4.5" />}
           </button>
 
-          <div className="mag-page-content flex h-full min-h-0 flex-col overflow-y-auto px-5 pb-5 pt-4 sm:px-9 sm:pb-7 sm:pt-6">
+          <div
+            className="mag-page-content mag-scroll flex h-full min-h-0 flex-col overflow-y-auto px-5 pb-5 pt-4 sm:px-9 sm:pb-7 sm:pt-6"
+            onScroll={onScrollProgress}
+          >
             {/* Üst şerit */}
             <div className="flex items-center justify-between gap-3 border-b border-stone-900/25 pb-2 text-[9px] uppercase tracking-[0.24em] text-stone-600 sm:text-[10px]">
               <span className="mag-serif font-bold tracking-[0.18em] text-stone-800">
@@ -375,17 +394,6 @@ export function FullReadDialog({
             {/* Eylem çubuğu */}
             {!loading && (
               <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-stone-900/20 pt-3.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onDeepDive(finding);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-sm bg-stone-900 px-3.5 py-2 text-[12px] font-bold text-amber-50 transition-colors hover:bg-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
-                >
-                  <Microscope className="h-4 w-4 text-amber-300" />
-                  Derin Analiz
-                </button>
                 <button
                   type="button"
                   onClick={() => onToggleBookmark(finding)}
