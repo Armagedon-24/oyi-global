@@ -1,16 +1,20 @@
 "use client";
 
 /**
- * Tam Oku — makalenin tamamını büyük okuma penceresinde açar.
- * Dergi sayfasının büyütülmüş sürümü: krem kâğıt, serif tipografi,
- * tam metin (kırpılmamış), tüm makale görselleri, lightbox ve okuma eylemleri.
+ * Tam Oku — makalenin TAMAMINI büyük okuma penceresinde açar.
+ * Açılışta /api/full-article çağrılır: makale orijinal kaynağından okunur,
+ * Türkçeye çevrilir ve dergi sayfası dizgisinde sunulur (Derin Analiz gibi
+ * canlı getirme + önbellek akışı). Kaynak okunamazsa kayıt özetine düşer.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bookmark,
   ExternalLink,
+  FileText,
+  Loader2,
   Microscope,
+  RefreshCw,
   Star,
   X,
 } from "lucide-react";
@@ -21,7 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { categoryLabel, getLanguage } from "@/lib/forensics-config";
-import { imgProxyUrl, parseFindingImages } from "@/lib/image-utils";
+import { imgProxyUrl, type ArticleImage } from "@/lib/image-utils";
 import type { FindingItem } from "@/lib/types";
 
 interface FullReadDialogProps {
@@ -30,6 +34,20 @@ interface FullReadDialogProps {
   onDeepDive: (f: FindingItem) => void;
   onToggleBookmark: (f: FindingItem) => void;
 }
+
+interface FullArticleState {
+  paragraphs: string[];
+  wordCount: number;
+  translated: boolean;
+  cached: boolean;
+}
+
+const LOADING_PHASES = [
+  "Sayfa orijinal kaynağından okunuyor…",
+  "Makale metni yapıştırılıyor…",
+  "Türkçeye çevriliyor…",
+  "Sayfa dizgiye hazırlanıyor…",
+];
 
 function formatDate(s: string | null): string | null {
   if (!s) return null;
@@ -45,8 +63,12 @@ export function FullReadDialog({
   onToggleBookmark,
 }: FullReadDialogProps) {
   const [zoom, setZoom] = useState<{ url: string; alt: string } | null>(null);
+  const [full, setFull] = useState<FullArticleState | null>(null);
+  const [images, setImages] = useState<ArticleImage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [phase, setPhase] = useState(0);
 
-  const images = useMemo(() => parseFindingImages(finding.images), [finding.images]);
   const langInfo = getLanguage(finding.language);
   const date = formatDate(finding.publishedDate);
   const keywords = useMemo(() => {
@@ -58,15 +80,73 @@ export function FullReadDialog({
     }
   }, [finding.keywords]);
 
-  // Tam metin — dergi sayfasındaki 860 karakterlik kırpmanın TAMAMI
-  const paragraphs = useMemo(() => {
+  // Kayıt özeti — tam makale okunamazsa yedek metin
+  const fallbackParagraphs = useMemo(() => {
     const t = (finding.trSummary ?? "").trim();
     if (!t) return [];
-    return t
-      .split(/\n+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    return t.split(/\n+/).map((s) => s.trim()).filter(Boolean);
   }, [finding.trSummary]);
+
+  useEffect(() => {
+    if (!loading) return;
+    const t = setInterval(() => setPhase((p) => (p + 1) % LOADING_PHASES.length), 3200);
+    return () => clearInterval(t);
+  }, [loading]);
+
+  const fetchArticle = (force = false) => {
+    setLoading(true);
+    setNotice(null);
+    fetch("/api/full-article", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: finding.id, force }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.paragraphs) && data.paragraphs.length > 0) {
+          setFull({
+            paragraphs: data.paragraphs,
+            wordCount: Number(data.wordCount) || 0,
+            translated: Boolean(data.translated),
+            cached: Boolean(data.cached),
+          });
+          if (Array.isArray(data.images) && data.images.length > 0) setImages(data.images);
+          setNotice(null);
+        } else {
+          // Kaynak okunamadı — kayıt özetiyle okunmaya devam
+          setFull(null);
+          setNotice(
+            data.message ||
+              (data.error === "unreachable"
+                ? "Makalenin tam metni kaynağından okunamadı (sayfa erişime kapı olabilir)."
+                : "Tam makale şu anda getirilemedi.")
+          );
+        }
+      })
+      .catch(() => {
+        setFull(null);
+        setNotice("Bağlantı hatası — tam makale getirilemedi.");
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    setImages((finding.images || "").startsWith("[") ? parseImagesSafe(finding.images) : []);
+    setFull(null);
+    setNotice(null);
+    setLoading(true);
+    setPhase(0);
+    fetchArticle(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finding.id]);
+
+  const paragraphs = full?.paragraphs ?? fallbackParagraphs;
+  const isFullText = Boolean(full);
+  const metaBadge = loading
+    ? "Tam metin getiriliyor…"
+    : isFullText
+      ? `Tam Metin · ${full!.wordCount.toLocaleString("tr-TR")} kelime`
+      : "Kayıt Özeti";
 
   return (
     <>
@@ -81,7 +161,7 @@ export function FullReadDialog({
           <div className="mag-page relative flex h-full w-full flex-col overflow-hidden">
           <span className="sr-only">
             <DialogTitle>{finding.trTitle}</DialogTitle>
-            <DialogDescription>Tam metin okuma penceresi</DialogDescription>
+            <DialogDescription>Tam makale okuma penceresi</DialogDescription>
           </span>
 
           {/* Özel kapatma düğmesi (krem zeminde görünür) */}
@@ -91,7 +171,7 @@ export function FullReadDialog({
             aria-label="Okuma penceresini kapat"
             className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-stone-900/25 bg-white/70 text-stone-800 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
           >
-            <X className="h-4.5 w-4.5" />
+            {loading ? <Loader2 className="h-4.5 w-4.5 animate-spin" /> : <X className="h-4.5 w-4.5" />}
           </button>
 
           <div className="mag-page-content flex h-full min-h-0 flex-col overflow-y-auto px-5 pb-5 pt-4 sm:px-9 sm:pb-7 sm:pt-6">
@@ -101,7 +181,7 @@ export function FullReadDialog({
                 KRİMİSCAN GLOBAL
               </span>
               <span className="min-w-0 flex-1 truncate text-center">
-                Tam Metin Baskı · {categoryLabel(finding.category)}
+                {metaBadge} · {categoryLabel(finding.category)}
               </span>
               <span className="mag-serif">Tam Oku</span>
             </div>
@@ -144,11 +224,62 @@ export function FullReadDialog({
                 </>
               )}
               <span aria-hidden>·</span>
-              <span className="italic normal-case tracking-normal">yapay zekâ ile Türkçeleştirilmiştir</span>
+              <span className="italic normal-case tracking-normal">
+                {full?.translated === false ? "kaynak dilinde metin" : "yapay zekâ ile Türkçeleştirilmiştir"}
+              </span>
             </div>
 
-            {/* Makale görselleri — tam galeri */}
-            {images.length > 0 && (
+            {/* Dizgi yükleniyor — dergi üslubunda canlı getirme durumu */}
+            {loading && (
+              <div className="mt-8 flex flex-col items-center gap-4 pb-6" role="status" aria-live="polite">
+                <div className="relative inline-flex h-14 w-14 items-center justify-center rounded-full border border-stone-900/25 bg-white/60">
+                  <Loader2 className="h-6 w-6 animate-spin text-amber-800" />
+                </div>
+                <div className="text-center">
+                  <p className="mag-serif text-[15px] font-semibold text-stone-900">
+                    {LOADING_PHASES[phase]}
+                  </p>
+                  <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-stone-500">
+                    Derin analiz gibi tam metin getirme · önbelleğe alınır
+                  </p>
+                </div>
+                {/* Dizgi boş satırları — matbaada sıralanmış satırlar hissi */}
+                <div className="mt-2 w-full max-w-xl space-y-2.5" aria-hidden>
+                  {[92, 100, 84, 96, 70, 88].map((w, i) => (
+                    <div
+                      key={i}
+                      className="h-2.5 animate-pulse rounded-[2px] bg-stone-900/10"
+                      style={{ width: `${w}%`, animationDelay: `${i * 140}ms` }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Kaynak okunamadı bildirimi — özetle okunmaya devam */}
+            {!loading && notice && (
+              <div className="mt-4 rounded-sm border-l-2 border-amber-700 bg-amber-100/60 px-3 py-2.5 text-[12.5px] leading-snug text-stone-800">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 font-bold">
+                    <FileText className="h-3.5 w-3.5" />
+                    Tam metin kaynağından okunamadı
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => fetchArticle(true)}
+                    className="inline-flex items-center gap-1 rounded-sm border border-stone-900/30 px-2 py-0.5 text-[11px] font-semibold text-stone-700 transition hover:bg-stone-900/10"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Yeniden dene
+                  </button>
+                </div>
+                <p className="mt-1 italic text-stone-600">{notice}</p>
+                <p className="mt-1">Aşağıda kayıt özetiyle okumaya devam edebilirsiniz.</p>
+              </div>
+            )}
+
+            {/* Makale görselleri — tam galeri (API'den garantilenen) */}
+            {!loading && images.length > 0 && (
               <section className="mt-4">
                 <h3 className="text-[9px] font-bold uppercase tracking-[0.22em] text-stone-600">
                   Makale Görselleri — {images.length}
@@ -180,38 +311,52 @@ export function FullReadDialog({
               </section>
             )}
 
-            {/* TAM METİN — kırpma yok */}
-            <article className="mag-body mt-5">
-              {paragraphs.length > 0 ? (
-                <div className="mag-cols mag-serif columns-1 gap-8 text-[13.5px] leading-[1.78] text-stone-800 md:columns-2 md:text-[14.5px]">
-                  {paragraphs.map((par, i) => (
-                    <p key={i} className={i === 0 ? "mag-dropcap" : undefined} style={{ marginBottom: "0.85em" }}>
-                      {par}
-                    </p>
-                  ))}
+            {/* MAKALE METNİ — tam makale (kırpma yok) veya kayıt özeti */}
+            {!loading && (
+              <article className="mag-body mt-5">
+                {paragraphs.length > 0 ? (
+                  <>
+                    {isFullText && (
+                      <p className="mag-serif mb-3 border-l-2 border-amber-700/60 pl-3 text-[11.5px] italic leading-snug text-stone-600">
+                        {full!.cached
+                          ? "Bu makalenin tam metni daha önce getirildi (önbellek). "
+                          : "Bu makalenin tam metni az önce orijinal kaynağından okundu. "}
+                        {full!.translated === false
+                          ? "Kaynak dili Türkçe olduğu için çeviri yapılmadı."
+                          : "Orijinal dilinden yapay zekâ ile Türkçeye çevrilmiştir."}
+                      </p>
+                    )}
+                    <div className="mag-cols mag-serif columns-1 gap-8 text-[13.5px] leading-[1.78] text-stone-800 md:columns-2 md:text-[14.5px]">
+                      {paragraphs.map((par, i) => (
+                        <p key={i} className={i === 0 ? "mag-dropcap" : undefined} style={{ marginBottom: "0.85em" }}>
+                          {par}
+                        </p>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="mag-serif text-[13.5px] leading-relaxed text-stone-700">
+                    Bu kayıt için okunabilir metin bulunamadı. Derin analiz panelinden yapay zekâ
+                    değerlendirmesini okuyabilir veya orijinal kaynağa giderek makaleye ulaşabilirsiniz.
+                  </p>
+                )}
+                <div className="mt-3 flex items-center justify-center gap-2 text-stone-500" aria-hidden>
+                  <span className="h-px w-12 bg-stone-500/50" />
+                  <span className="text-[11px]">◆</span>
+                  <span className="h-px w-12 bg-stone-500/50" />
                 </div>
-              ) : (
-                <p className="mag-serif text-[13.5px] leading-relaxed text-stone-700">
-                  Bu sayıda tam metin bulunamadı. Derin analiz panelinden yapay zekâ değerlendirmesini
-                  okuyabilir veya orijinal kaynağa giderek makalenin tamamına ulaşabilirsiniz.
-                </p>
-              )}
-              <div className="mt-3 flex items-center justify-center gap-2 text-stone-500" aria-hidden>
-                <span className="h-px w-12 bg-stone-500/50" />
-                <span className="text-[11px]">◆</span>
-                <span className="h-px w-12 bg-stone-500/50" />
-              </div>
-            </article>
+              </article>
+            )}
 
             {/* Okur notu */}
-            {finding.notes && (
+            {finding.notes && !loading && (
               <div className="mt-3 rounded-sm border-l-2 border-amber-700 bg-amber-100/50 px-3 py-2 text-[12px] italic leading-snug text-stone-800">
                 <b className="not-italic">Okur Notu:</b> {finding.notes}
               </div>
             )}
 
             {/* Anahtar kavramlar */}
-            {keywords.length > 0 && (
+            {keywords.length > 0 && !loading && (
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-stone-600">
                   Anahtar:
@@ -228,40 +373,53 @@ export function FullReadDialog({
             )}
 
             {/* Eylem çubuğu */}
-            <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-stone-900/20 pt-3.5">
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onDeepDive(finding);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-sm bg-stone-900 px-3.5 py-2 text-[12px] font-bold text-amber-50 transition-colors hover:bg-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
-              >
-                <Microscope className="h-4 w-4 text-amber-300" />
-                Derin Analiz
-              </button>
-              <button
-                type="button"
-                onClick={() => onToggleBookmark(finding)}
-                className={`inline-flex items-center gap-1.5 rounded-sm border px-3 py-2 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 ${
-                  finding.bookmarked
-                    ? "border-amber-700/60 bg-amber-100/60 text-amber-800"
-                    : "border-stone-900/25 text-stone-700 hover:bg-stone-900/10"
-                }`}
-              >
-                <Bookmark className={`h-4 w-4 ${finding.bookmarked ? "fill-amber-700" : ""}`} />
-                {finding.bookmarked ? "İşaretli" : "İşaretle"}
-              </button>
-              <a
-                href={finding.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-sm border border-stone-900/25 px-3 py-2 text-[12px] font-semibold text-stone-700 transition-colors hover:bg-stone-900/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Orijinal Kaynak
-              </a>
-            </div>
+            {!loading && (
+              <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-stone-900/20 pt-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onDeepDive(finding);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-sm bg-stone-900 px-3.5 py-2 text-[12px] font-bold text-amber-50 transition-colors hover:bg-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+                >
+                  <Microscope className="h-4 w-4 text-amber-300" />
+                  Derin Analiz
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onToggleBookmark(finding)}
+                  className={`inline-flex items-center gap-1.5 rounded-sm border px-3 py-2 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 ${
+                    finding.bookmarked
+                      ? "border-amber-700/60 bg-amber-100/60 text-amber-800"
+                      : "border-stone-900/25 text-stone-700 hover:bg-stone-900/10"
+                  }`}
+                >
+                  <Bookmark className={`h-4 w-4 ${finding.bookmarked ? "fill-amber-700" : ""}`} />
+                  {finding.bookmarked ? "İşaretli" : "İşaretle"}
+                </button>
+                <a
+                  href={finding.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-sm border border-stone-900/25 px-3 py-2 text-[12px] font-semibold text-stone-700 transition-colors hover:bg-stone-900/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Orijinal Kaynak
+                </a>
+                {isFullText && (
+                  <button
+                    type="button"
+                    onClick={() => fetchArticle(true)}
+                    title="Tam metni kaynağından yeniden oku"
+                    className="ml-auto inline-flex items-center gap-1.5 rounded-sm border border-stone-900/25 px-3 py-2 text-[12px] font-semibold text-stone-600 transition-colors hover:bg-stone-900/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Yenile
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           </div>
         </DialogContent>
@@ -304,4 +462,17 @@ export function FullReadDialog({
       )}
     </>
   );
+}
+
+/** finding.images alanını güvenle ayrıştırır (bozuk JSON → boş liste) */
+function parseImagesSafe(raw: string): ArticleImage[] {
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((it: any) => it && typeof it.url === "string")
+      .map((it: any) => ({ url: String(it.url), alt: String(it.alt ?? "") }));
+  } catch {
+    return [];
+  }
 }

@@ -178,3 +178,27 @@ Stage Summary:
 - Çevirme artık "sağ alt köşeden tutup esneyerek çevirme" hissi: tuş/klavye/kenar tıklamasında esnek anahtar kare animasyonu, kulaktan sürüklemekte parmağı izleyip bırakınca tamamlayan/yaylanan gerçek etkileşim
 - Makalelerde Tam Oku butonu: tam metin + tüm görseller + lightbox içeren büyük okuma penceresi
 - Değişen dosyalar: globals.css, magazine-view.tsx, full-read-dialog.tsx (yeni); scripts/verify-corner-flip*.sh + verify-fullread.sh (yeni)
+
+---
+Task ID: 9
+Agent: main-agent (Z.ai)
+Task: "Tam Oku'ya tıklandığında derin analiz gibi TÜM makale açılarak okunabilsin" — Tam Oku penceresinin kayıt özetinden tam makaleye yükseltilmesi
+
+Work Log:
+- prisma/schema.prisma: Finding.fullArticle alanı eklendi (JSON önbellek: {title, paragraphs, wordCount, translated, fetchedAt}); db push + generate yapıldı
+- src/lib/llm.ts: tam makale katmanı eklendi —
+  - extractArticleParagraphs(): HTML'den <p> bazlı paragraf yapısı korunarak ana metin çıkarımı (script/style/nav/header/footer/aside atılır, menü/reklam paragrafları elenir; <p> yoksa cümle-sınır bölümlemesine düşer; 12.000 karakter / 150 paragraf sınırı)
+  - fetchPageHtmlForText(): doğrudan indirme (11s) → page_reader yedeği (22s) — image-extract'teki fetchPageHtmlDirect yeniden kullanıldı
+  - translateChunk(): parça başına ~3.800 karakter, paragraf sayısı/sırası korunumlu Türkçe çeviri (2 deneme, kalıcı hata durumunda orijinal metin *(çevrilemedi)* işaretiyle korunur)
+  - fetchAndTranslateFullArticle(): Türkçe kaynakta çeviri atlanır; sayfa hiç okunamazsa boş sonuç döner (çağıran taraf özete düşer)
+- src/app/api/full-article/route.ts (yeni): POST {id, force?} — ensureFindingImages ile görsel garantisi (deep-dive deseni), önbellek (24ms) / canlı üretim (~31s), okunamayan sayfa önbelleğe ALINMAZ (yeniden denenebilir), maxDuration 120
+- full-read-dialog.tsx yeniden yazıldı: açılışta /api/full-article çağrısı; dergi üslubu yükleniyor durumu (dönen ikon + 4 aşamalı değişen mesaj "Sayfa orijinal kaynağından okunuyor… → Türkçeye çevriliyor…" + dizgi boş satırları); başarıda "Tam Metin · N kelime" rozeti + çeviri bilgisi notu; kaynak okunamazsa amber bildirim + "Yeniden dene" butonu + kayıt özetiyle okunmaya devam; "Yenile" (force) butonu; üst şerit rozeti yüklemeye özel "Tam metin getiriliyor…"; kapatma düğmesi yüklemekte spinner gösterir; lightbox/okur notu/anahtar kavramlar/eylem çubuğu korundu
+- API testi: Spectroscopy EN makalesi — 27 paragraf / 1.158 kelime Türkçe, 8 görsel, 31s üretim → ikinci çağrı 24ms cached:true
+- Browser doğrulama (agent-browser): dergi TOC → makale → Tam Oku; yükleme durumu görsel yakalandı (faz mesajı + 6 dizgi satırı + spinner); Hollandaca makale 228 kelime Türkçeye çevrildi (7 paragraf, 2 görsel); diyalog 940×828 ortalanmış; TR kaynakta "kaynak dilinde metin" notuyla çevirisiz metin; indirme bağlantılı kayıtta (korea.kr download.do) page_reader yedeği 73 kelime kurtardı; mobil 390px pencere 367px sığıyor (scrollW=390); konsol hatası yok; tsc projede temiz
+- Ekran görüntüleri: download/tamoku-v2-kontrol/01-08 PNG (yükleme, tam metin, kaydırma, mobil)
+- scripts/verify-fullread-v2.sh + verify-fullread-v3.sh (yeni doğrulama scriptleri; TOC seçicisi border-dotted sınıfına sabitlendi)
+
+Stage Summary:
+- Tam Oku artık derin analiz gibi çalışıyor: açılışta makale ORİJİNAL KAYNAKTAN tam metin okunuyor → paragraf yapısı korunarak Türkçeye çevriliyor → büyük dergi penceresinde kırpılmadan sunuluyor; sonuçlar önbelleğe alınıyor
+- Değişen dosyalar: schema.prisma, llm.ts, api/full-article (yeni), full-read-dialog.tsx; scripts/verify-fullread-v2/v3.sh (yeni)
+- Not: ilk tarama metni kırpması (860 karakter) dergi sayfalarında duruyor — Tam Oku penceresi artık asıl tam metin okuma alanı

@@ -43,6 +43,7 @@ model Finding {
   publishedDate   String?
   images          String    @default("[]")
   deepAnalysis    String?
+  fullArticle     String?
   bookmarked      Boolean   @default(false)
   isRead          Boolean   @default(false)
   notes           String?
