@@ -246,3 +246,22 @@ Stage Summary:
 - Tarama yetkisi admin'e taşındı: /admin şifreli panel (tarama + bulgu silme + yorum moderasyonu); API'ler çerez korumalı; ana sayfa salt-okunur okuma modunda
 - Okurlar haberlerin altına "Okur Mektupları" köşesinden yorum bırakabiliyor (hız sınırı + bal küpü + admin moderasyonu ile)
 - Değişen dosyalar: schema.prisma, auth.ts (yeni), oyi-logo.tsx (yeni), public/logo.svg, admin/page.tsx (yeni), api/admin/* + api/comments/* + api/findings/[id]/comments (yeni), page.tsx, magazine-view.tsx, full-read-dialog.tsx, findings route, scan/* + enrich-images (koruma), layout, report, briefing, assistant, export, watchlist-dialog, llm.ts, forensics-config.ts, image-extract.ts, globals.css, types.ts, .env
+
+---
+Task ID: 12
+Agent: main-agent (Z.ai)
+Task: "sonraki adımı uygula" — Task 10/11 sonrası tam doğrulama oturumu (sunucu yeniden ayağa kaldırma + uçtan uca teyit)
+
+Work Log:
+- Sunucu restart-server.sh ile yeniden başlatıldı (HTTP 200, mag-leaf 9 kural, magFlipNext keyframes derlendi)
+- Task 10 teyit (scripts/verify-pro-flip.sh): makale sayfasında Derin Analiz butonu yok ("Analiz" eşleşmesi yalnızca TOC kategori adları — Kan İzi Deseni Analizi vb. false positive), Tam Oku'da Derin Analiz yok, .mag-ribbon yüklü diyalogda VAR (10% → kaydırmada 92%), .mag-scroll thumb rgba(120,85,30,.42), çevirme ortasında .mag-fold magFoldNext matrix3d + mag-under-sweep, geri çevirmede magFoldPrev, kulak sürükleme + bırakışta commit, kapak tıklaması Tam Oku açıyor, mobil 390px scrollW=390
+- Task 11 API teyit: çerezsiz scan/start→401, yanlış şifre→401, çerezsiz yorum listesi→401, çerezsiz yorum silme→401; doğru şifre→200+çerez, session authenticated:true, çerezli scan/start→scanId (sonra complete ile kapatıldı — yetim "running" kayıt bırakılmadı)
+- Yorum API uçtan uca: GET boş liste → POST yorum (author+body, doğrulama geçti) → admin listede göründü → admin DELETE 200 → kalan 0
+- Yorum UI uçtan uca: Tam Oku → form doldur (Adınız isteğe bağlı + Yorumunuz input'ları; NOT: yorum alanı textarea değil input, ilk placeholder'sız input bal küpü) → Yorumu Gönder → rozet "0 yorum"→"1 yorum" canlı güncellendi, "Okur Mektupları"nda kart göründü → test yorumu admin moderasyonla silindi (kalan 2 = önceki oturumun testleri)
+- Admin UI akışı: tarayıcıda kalan geçerli çerez ile panel direkt açıldı → Çıkış → şifre ekranı → yanlış şifre "Şifre hatalı. Tekrar deneyin." → doğru şifre → panel (398 bulgu / 11 yeni teknoloji / 14 dil / 2 okur yorumu), kapsam butonları "Tüm Diller (14 dil)" + "Tüm Kategoriler", Tarama Başlat, Son Bulgular, Yorum Moderasyonu, Çıkış
+- Ana sayfa okur modu: tarama butonu 0, "Tarama ve içerik yönetimi yalnızca editör tarafından yapılır" + Editör Girişi (header + footer Yönetim), header OYİ GLOBAL logosu (SVG rozet 44px, aria-label doğru), title OYİ GLOBAL içeriyor
+- Konsol hatası yok; tsc src temiz; ekran görüntüleri download/oyi-global-kontrol/11-15 PNG (giriş, panel, yorum UI, mobil kapak)
+
+Stage Summary:
+- Task 10 ve Task 11 önceki oturumda tamamlanmıştı; bu oturumda sunucu ayağa kaldırılıp tüm akışlar API + UI seviyesinde yeniden doğrulandı — hepsi çalışıyor
+- Küçük notlar: yorum gövdesi input (textarea değil); admin panel kapsam seçimi buton grubu (select değil); ADMIN_PASSWORD .env'de (oyi2026), değişirse sunucu yeniden başlatılmalı
