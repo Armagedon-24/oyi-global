@@ -285,3 +285,22 @@ Stage Summary:
 - Yükleme /api/admin/upload ile magic-byte denetimli, yerel /uploads yolları tüm görsel yüzeylerinde proxy'siz sunuluyor
 - Mobil tam uyum: 320/360/390px'te hiçbir sayfada yatay taşma veya üst üste binme kalmadı (ScrollArea → düz scroll + min-w-0 + flex-wrap düzeltmeleri)
 - Değişen dosyalar: api/admin/upload (yeni), api/admin/findings (yeni), admin/page.tsx, image-utils.ts, globals.css (.admin-scroll), page.tsx (görünüm değiştirici)
+
+---
+Task ID: 14
+Agent: main-agent (Z.ai)
+Task: "yönetim şifresini Hakan_1251 olarak değiştir, arayüzü derginin temasına uygun daha fütüristik ve şık bir şey yap"
+
+Work Log:
+- ŞİFRE DEĞİŞİMİ: .env → ADMIN_PASSWORD=Hakan_1251 (auth.ts fallback'i de senkronlandı, eski "oyi2026" yorumu temizlendi). Oturum jetonu şifreden türetilmiş SHA-256 olduğundan eski çerezler otomatik geçersiz oldu (yeniden giriş zorunlu) — doğrulandı: eski oturumla açılan /admin artık giriş ekranı gösteriyor.
+- FÜTÜRİST HUD TEMA (globals.css + ~170 satır yeni bölüm): .hud-root (derin uzay zeminine kehribar/siyan/kızıl radyal hüzmeler + teknik ızgara ::before + CRT mikro tarama ::after), .hud-panel (cam komuta paneli: gradient + backdrop-blur + inset çizgi), .hud-panel-soft (iç paneller nötr çerçeve), .hud-corner tl/tr/bl/br (viewfinder köşe braketleri), .hud-label/.hud-label-dim (mono geniş harf aralıklı teknik etiket), .hud-mono, .hud-glow (kehribar metin parıltısı), .hud-dot (nabız atan ONLINE noktası, hudPing), .hud-halo (dönen konik radar halesi, hudSpin), .hud-scanline (panel içinden geçen tarama hattı, hudSweep), .hud-glow-shadow (kehribar buton çekirdeği). prefers-reduced-motion desteği eklendi.
+- /admin YENİDEN TASARIM (page.tsx render katmanı; tüm state/mantık korunarak): GİRİŞ EKRANI — "Güvenli Erişim Terminali" mono başlık, dönen radar halesi içinde OYİ logosu, cam panelde köşe braketleri + tarama hattı + YETKİ DOĞRULAMA/ONLINE satırı, mono iz bırakan şifre alanı, kehribar gradyanlı parıltılı giriş butonu, "SHA-256 JETON · HTTPONLY ÇEREZ · OYİ-SEC v2" imzası. PANEL — sticky header (halo'lu logo + YÖNETİM çip + KOMUTA TERMİNALİ mono alt satır + OTURUM AKTİF canlı noktası), 5 HUD istatistik karoğu (köşe braketli, parıltılı değerler), Modül 01 Küresel Tarama (gradyanlı radar butonu, mono İLERLEME göstergesi, gradyanlı ilerleme çubuğu), Modül 02 Yeni Haber Ekle (kehribar kesikli yükleme alanı + hover parıltı, KAPAK rozeti mono), Modül 03 Arşiv + Modül 04 Okur Hattı (mono tarih/meta, kehribar hover çerçeveleri), mono terminal footer. Card/CardContent kullanımı kaldırıldı (Card import silindi).
+- Doğrulama (agent-browser): yanlış şifre → "Şifre hatalı. Tekrar deneyin." ✓; Hakan_1251 → panel + 4 Modül başlığı + OTURUM AKTİF ✓; masaüstü 1440px sw=1440 taşma yok ✓; 390px panel + form + arşiv/moderasyon sw=390, geniş öğe yok ✓; Çıkış → 390px mobil giriş ekranı ✓; dergi ana sayfası mag-page intakt, sw=1280 ✓; konsol hatası yok; tsc src 0 hata.
+- Not: .next önbelleği eski CSS'i tutuyordu (hud-* derlenmemiş) — .next silinip restart-server.sh ile taze derleme yapıldı (hud-root/hud-panel/hud-corner/hudPing chunk'ta teyit edildi).
+- Ekran görüntüleri: download/oyi-global-kontrol/24-31 PNG (HUD giriş masaüstü+mobil, panel üst/form/alt masaüstü, panel mobil üst/form/alt).
+
+Stage Summary:
+- Yönetici şifresi Hakan_1251 olarak belirlendi; eski oturumlar otomatik düşürüldü
+- /admin artık dergiyle aynı kehribar renk ailesini taşıyan fütüristik bir komuta terminali: cam paneller, köşe braketleri, radar halesi, tarama hattı, mono teknik etiketler
+- Tüm işlevler (tarama, haber ekleme, görsel yükleme, yorum moderasyonu, çıkış) aynen korunuyor; masaüstü + mobilde taşma/üst üste binme yok
+- Değişen dosyalar: .env, auth.ts, globals.css (HUD bölümü), admin/page.tsx

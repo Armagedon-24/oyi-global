@@ -699,3 +699,228 @@
     animation: none;
   }
 }
+
+/* ============================================================
+   OYİ GLOBAL — YÖNETİM TERMİNALİ: FÜTÜRİST HUD TEMA
+   Derginin kehribar mürekkebini karanlık bir komuta merkezine
+   taşır: cam paneller, görüş açısı köşe braketleri, tarama
+   ızgarası ve radar halesi. Kâğıt dergi ile aynı renk ailesi.
+   ============================================================ */
+
+/* Ana zemin — derin uzay laciverti + kehribar/siyan hüzmeler */
+.hud-root {
+  position: relative;
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 520px at 10% -8%, rgba(245, 158, 11, 0.1), transparent 62%),
+    radial-gradient(900px 480px at 108% 10%, rgba(34, 211, 238, 0.07), transparent 58%),
+    radial-gradient(1300px 760px at 50% 118%, rgba(159, 18, 57, 0.1), transparent 62%),
+    #04060c;
+  color: #e2e8f0;
+}
+
+/* İnce teknik ızgara — ufukta kaybolan harita dokusu */
+.hud-root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.055) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask-image: radial-gradient(ellipse 92% 64% at 50% 0%, black 0%, transparent 100%);
+  mask-image: radial-gradient(ellipse 92% 64% at 50% 0%, black 0%, transparent 100%);
+}
+
+/* CRT mikro tarama çizgileri — çok hafif doku */
+.hud-root::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.014) 0px,
+    rgba(255, 255, 255, 0.014) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* Cam komuta paneli */
+.hud-panel {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 158, 11, 0.16);
+  background: linear-gradient(165deg, rgba(17, 23, 39, 0.86) 0%, rgba(7, 10, 19, 0.94) 100%);
+  box-shadow:
+    0 26px 60px -30px rgba(0, 0, 0, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* İç paneller: kehribar yerine nötr çerçeve */
+.hud-panel-soft {
+  border-color: rgba(148, 163, 184, 0.14);
+}
+
+/* Görüş açısı (viewfinder) köşe braketleri */
+.hud-corner {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border: 0 solid rgba(245, 158, 11, 0.62);
+  pointer-events: none;
+  z-index: 1;
+}
+.hud-corner.tl {
+  top: -1px;
+  left: -1px;
+  border-top-width: 2px;
+  border-left-width: 2px;
+  border-top-left-radius: 14px;
+}
+.hud-corner.tr {
+  top: -1px;
+  right: -1px;
+  border-top-width: 2px;
+  border-right-width: 2px;
+  border-top-right-radius: 14px;
+}
+.hud-corner.bl {
+  bottom: -1px;
+  left: -1px;
+  border-bottom-width: 2px;
+  border-left-width: 2px;
+  border-bottom-left-radius: 14px;
+}
+.hud-corner.br {
+  bottom: -1px;
+  right: -1px;
+  border-bottom-width: 2px;
+  border-right-width: 2px;
+  border-bottom-right-radius: 14px;
+}
+
+/* Teknik etiket — mono, geniş harf aralığı */
+.hud-label {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: rgba(251, 191, 36, 0.85);
+}
+.hud-label-dim {
+  color: rgba(148, 163, 184, 0.85);
+}
+
+/* Mono yazı tipi yardımcısı */
+.hud-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* Kehribar ekran parıltısı */
+.hud-glow {
+  text-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
+}
+
+/* Canlı sistem noktası — nabız atan halka */
+.hud-dot {
+  position: relative;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.9);
+}
+.hud-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 1px solid rgba(52, 211, 153, 0.65);
+  animation: hudPing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes hudPing {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+/* Giriş kartı arkasında dönen radar halesi */
+.hud-halo {
+  position: absolute;
+  inset: -18px;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(245, 158, 11, 0.42),
+    rgba(245, 158, 11, 0.05) 26%,
+    transparent 44%,
+    transparent 100%
+  );
+  filter: blur(7px);
+  animation: hudSpin 5.4s linear infinite;
+  pointer-events: none;
+}
+@keyframes hudSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Panel içinden geçen dikey tarama hattı */
+.hud-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -80px;
+  height: 80px;
+  background: linear-gradient(180deg, transparent, rgba(245, 158, 11, 0.08), transparent);
+  animation: hudSweep 5.2s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+@keyframes hudSweep {
+  0% {
+    top: -80px;
+  }
+  62% {
+    top: 104%;
+  }
+  100% {
+    top: 104%;
+  }
+}
+
+/* Ana eylem butonu — kehribar çekirdek parıltısı */
+.hud-glow-shadow {
+  box-shadow:
+    0 0 26px -6px rgba(245, 158, 11, 0.6),
+    0 14px 30px -14px rgba(0, 0, 0, 0.85);
+}
+.hud-glow-shadow:hover {
+  box-shadow:
+    0 0 36px -4px rgba(245, 158, 11, 0.75),
+    0 16px 34px -14px rgba(0, 0, 0, 0.85);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-halo,
+  .hud-scanline,
+  .hud-dot::after {
+    animation: none;
+  }
+}

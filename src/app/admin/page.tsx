@@ -10,7 +10,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -381,59 +380,99 @@ export default function AdminPage() {
   // ================= GİRİŞ EKRANI =================
   if (auth === "checking") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-100">
-        <Loader2 className="h-6 w-6 animate-spin text-amber-400" />
+      <div className="hud-root flex min-h-screen items-center justify-center text-slate-100">
+        <div className="flex flex-col items-center gap-4">
+          <span className="relative inline-flex">
+            <span className="hud-halo" aria-hidden />
+            <OyiMark className="relative h-14 w-14" />
+          </span>
+          <Loader2 className="h-4 w-4 animate-spin text-amber-400" />
+        </div>
       </div>
     );
   }
 
   if (auth === "guest") {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-950 px-4 text-slate-100">
-        <div className="flex items-center gap-3">
-          <OyiMark className="h-14 w-14" />
-          <div>
-            <h1 className="mag-serif text-xl font-black tracking-tight">
-              OYİ <span className="text-amber-400">GLOBAL</span>
-            </h1>
-            <p className="text-xs text-slate-400">Yönetim Paneli — Editör Girişi</p>
+      <div className="hud-root flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10 text-slate-100">
+        <div className="relative z-10 flex flex-col items-center gap-8">
+          <div className="flex items-center gap-4">
+            <span className="relative inline-flex">
+              <span className="hud-halo" aria-hidden />
+              <OyiMark className="relative h-16 w-16" />
+            </span>
+            <div>
+              <p className="hud-label mb-1.5">Güvenli Erişim Terminali</p>
+              <h1 className="mag-serif text-2xl font-black tracking-tight text-slate-50">
+                OYİ <span className="hud-glow text-amber-400">GLOBAL</span>
+              </h1>
+              <p className="mt-1 text-xs text-slate-400">Yönetim Paneli — Editör Girişi</p>
+            </div>
           </div>
-        </div>
 
-        <form
-          onSubmit={login}
-          className="w-full max-w-sm space-y-3 rounded-xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl"
-        >
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-            <Lock className="h-4 w-4 text-amber-400" />
-            Yönetici şifresi
-          </div>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Şifre"
-            autoFocus
-            className="bg-slate-950 border-slate-700"
-          />
-          {loginError && <p className="text-xs font-semibold text-red-400">{loginError}</p>}
-          <Button
-            type="submit"
-            disabled={loggingIn || password.length === 0}
-            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold"
+          <form
+            onSubmit={login}
+            className="hud-panel relative w-full max-w-sm space-y-4 overflow-hidden p-6 sm:p-7"
           >
-            {loggingIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            Panele Giriş Yap
-          </Button>
-          <p className="text-[11px] leading-snug text-slate-500">
-            Şifre projenin <code className="text-slate-400">.env</code> dosyasındaki{" "}
-            <code className="text-amber-400/90">ADMIN_PASSWORD</code> ile belirlenir.
-          </p>
-        </form>
+            <i className="hud-corner tl" aria-hidden />
+            <i className="hud-corner tr" aria-hidden />
+            <i className="hud-corner bl" aria-hidden />
+            <i className="hud-corner br" aria-hidden />
+            <span className="hud-scanline" aria-hidden />
 
-        <Link href="/" className="text-xs text-slate-400 underline-offset-2 hover:text-amber-300 hover:underline">
-          ← Dergiye geri dön
-        </Link>
+            <div className="relative flex items-center justify-between gap-2">
+              <span className="hud-label">
+                <Lock className="mr-1.5 inline h-3.5 w-3.5 align-[-2px]" />
+                Yetki Doğrulama
+              </span>
+              <span className="flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.18em] text-emerald-300">
+                <span className="hud-dot" />
+                ONLINE
+              </span>
+            </div>
+
+            <div className="relative space-y-2">
+              <label htmlFor="admin-pass" className="hud-label hud-label-dim">
+                Yönetici Şifresi
+              </label>
+              <Input
+                id="admin-pass"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••••"
+                autoFocus
+                className="hud-mono h-11 border-amber-500/25 bg-slate-950/80 text-sm tracking-[0.3em] focus-visible:border-amber-400/80 focus-visible:ring-amber-400/25"
+              />
+              {loginError && (
+                <p className="hud-mono flex items-center gap-1.5 text-[11px] font-semibold text-red-400">
+                  <CircleAlert className="h-3.5 w-3.5 shrink-0" />
+                  {loginError}
+                </p>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              disabled={loggingIn || password.length === 0}
+              className="hud-glow-shadow relative h-11 w-full bg-gradient-to-b from-amber-400 to-amber-600 font-bold text-slate-950 transition hover:from-amber-300 hover:to-amber-500"
+            >
+              {loggingIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              Panele Giriş Yap
+            </Button>
+
+            <p className="hud-mono relative text-center text-[9.5px] leading-relaxed tracking-[0.18em] text-slate-600">
+              SHA-256 JETON · HTTPONLY ÇEREZ · OYİ-SEC v2
+            </p>
+          </form>
+
+          <Link
+            href="/"
+            className="text-xs text-slate-400 underline-offset-4 transition-colors hover:text-amber-300 hover:underline"
+          >
+            ← Dergiye geri dön
+          </Link>
+        </div>
       </div>
     );
   }
@@ -450,28 +489,35 @@ export default function AdminPage() {
     : null;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="hud-root min-h-screen text-slate-100">
       {/* Üst bar */}
-      <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md">
+      <header className="sticky top-0 z-30 border-b border-amber-500/15 bg-[#04060c]/85 shadow-[0_18px_40px_-24px_rgba(0,0,0,0.9)] backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
-          <div className="flex items-center gap-3 min-w-0">
-            <OyiMark className="h-10 w-10 shrink-0" />
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="relative inline-flex shrink-0">
+              <span className="hud-halo opacity-60" aria-hidden />
+              <OyiMark className="relative h-10 w-10" />
+            </span>
             <div className="min-w-0">
-              <h1 className="mag-serif font-black text-base leading-tight tracking-tight text-slate-50">
-                OYİ <span className="text-amber-400">GLOBAL</span>
-                <span className="ml-2 rounded-sm border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase tracking-[0.18em] text-emerald-300">
+              <h1 className="mag-serif text-base font-black leading-tight tracking-tight text-slate-50">
+                OYİ <span className="hud-glow text-amber-400">GLOBAL</span>
+                <span className="hud-mono ml-2 inline-block rounded-sm border border-amber-400/35 bg-amber-400/10 px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase tracking-[0.18em] text-amber-300">
                   Yönetim
                 </span>
               </h1>
-              <p className="text-[11px] text-slate-400 truncate">
-                Dergi taraması, içerik ve yorum yönetimi
+              <p className="hud-mono truncate text-[10px] tracking-[0.16em] text-slate-500">
+                KOMUTA TERMİNALİ · BULGU &amp; YORUM KONTROL
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="hidden items-center gap-1.5 text-[10px] font-semibold tracking-[0.18em] text-emerald-300 md:flex">
+              <span className="hud-dot" />
+              OTURUM AKTİF
+            </span>
             <Link
               href="/"
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300 transition-colors hover:border-amber-500/50 hover:text-amber-300"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-700/80 bg-slate-900/70 px-3 text-sm text-slate-300 transition-colors hover:border-amber-400/60 hover:text-amber-300"
             >
               <ExternalLink className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Dergiye Git</span>
@@ -479,7 +525,7 @@ export default function AdminPage() {
             <Button
               variant="outline"
               onClick={logout}
-              className="h-9 border-slate-700 bg-slate-900 px-3 text-slate-300 hover:bg-slate-800 hover:text-red-300"
+              className="h-9 border-slate-700/80 bg-slate-900/70 px-3 text-slate-300 hover:bg-slate-800 hover:text-red-300"
             >
               <LogOut className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Çıkış</span>
@@ -488,40 +534,51 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6">
-        {/* İstatistikler */}
-        <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <main className="relative z-10 mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+        {/* İstatistikler — HUD ölçüm karoğu */}
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           {[
             { icon: Database, label: "Toplam Bulgu", value: stats?.total ?? 0, color: "text-amber-400" },
             { icon: Sparkles, label: "Yeni Teknoloji", value: stats?.newTech ?? 0, color: "text-emerald-400" },
-            { icon: Languages, label: "Kaynak Dil", value: stats?.languages.length ?? 0, color: "text-purple-400" },
+            { icon: Languages, label: "Kaynak Dil", value: stats?.languages.length ?? 0, color: "text-cyan-300" },
             { icon: MessageSquare, label: "Okur Yorumu", value: commentTotal, color: "text-sky-400" },
             { icon: ShieldCheck, label: "Son Güncelleme", value: lastScanDate ?? "—", color: "text-slate-200", small: true },
           ].map((s, i) => (
-            <Card key={i} className="border-slate-800 bg-slate-900/70">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-slate-800/80 border border-slate-700 flex items-center justify-center shrink-0">
+            <div key={i} className="hud-panel p-4">
+              <i className="hud-corner tl" aria-hidden />
+              <i className="hud-corner br" aria-hidden />
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-amber-500/20 bg-slate-950/70 shadow-[inset_0_0_14px_rgba(245,158,11,0.08)]">
                   <s.icon className={`h-4 w-4 ${s.color}`} />
                 </div>
                 <div className="min-w-0">
-                  <p className={`font-bold leading-none ${s.small ? "text-[13px] truncate" : "text-xl"}`}>
+                  <p
+                    className={`hud-glow font-bold leading-none ${
+                      s.small ? "hud-mono truncate text-[12.5px]" : "text-xl"
+                    }`}
+                  >
                     {s.value}
                   </p>
-                  <p className="text-[11px] text-slate-400 mt-1">{s.label}</p>
+                  <p className="hud-label hud-label-dim mt-1.5 truncate">{s.label}</p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ))}
         </section>
 
-        {/* Tarama paneli */}
-        <section className="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-950 p-5 sm:p-6 space-y-4">
+        {/* Tarama paneli — Modül 01 */}
+        <section className="hud-panel space-y-4 p-5 sm:p-6">
+          <i className="hud-corner tl" aria-hidden />
+          <i className="hud-corner tr" aria-hidden />
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 font-semibold text-slate-100">
-              <Radar className="h-4 w-4 text-amber-400" />
-              Küresel Tarama — Yalnızca Editör
-            </h2>
-            <Badge className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30 gap-1 hover:bg-emerald-500/15">
+            <div>
+              <p className="hud-label mb-1">Modül 01 — Küresel Radara</p>
+              <h2 className="flex items-center gap-2 font-semibold text-slate-100">
+                <Radar className="h-4 w-4 text-amber-400" />
+                Küresel Tarama — Yalnızca Editör
+              </h2>
+            </div>
+            <Badge className="gap-1 border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/10">
               <ShieldCheck className="h-3 w-3" /> Admin yetkisi aktif
             </Badge>
           </div>
@@ -533,24 +590,24 @@ export default function AdminPage() {
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Tarama Kapsamı</label>
+              <label className="hud-label hud-label-dim">Tarama Kapsamı</label>
               <Select value={scope} onValueChange={setScope} disabled={scanning}>
-                <SelectTrigger className="w-full bg-slate-900 border-slate-700 text-sm">
+                <SelectTrigger className="w-full border-slate-700/70 bg-slate-950/80 text-sm focus-visible:ring-amber-400/25">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-slate-700">
+                <SelectContent className="border-amber-500/20 bg-[#0a0e1a]">
                   <SelectItem value="all">Tüm Diller ({SCAN_LANGUAGES.length} dil)</SelectItem>
                   <SelectItem value="quick">Hızlı Tarama (6 dil)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Kategori Odağı</label>
+              <label className="hud-label hud-label-dim">Kategori Odağı</label>
               <Select value={focusCategory} onValueChange={setFocusCategory} disabled={scanning}>
-                <SelectTrigger className="w-full bg-slate-900 border-slate-700 text-sm">
+                <SelectTrigger className="w-full border-slate-700/70 bg-slate-950/80 text-sm focus-visible:ring-amber-400/25">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-slate-700">
+                <SelectContent className="border-amber-500/20 bg-[#0a0e1a]">
                   <SelectItem value="all">Tüm Kategoriler</SelectItem>
                   {CATEGORIES.map((c) => (
                     <SelectItem key={c.key} value={c.key}>
@@ -560,19 +617,19 @@ export default function AdminPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="sm:col-span-2 flex items-end">
+            <div className="flex items-end sm:col-span-2">
               <Button
                 onClick={startScan}
                 disabled={scanning}
-                className="w-full h-10 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm"
+                className="hud-glow-shadow h-10 w-full bg-gradient-to-b from-amber-400 to-amber-600 text-sm font-bold text-slate-950 transition hover:from-amber-300 hover:to-amber-500"
               >
                 {scanning ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Tarama sürüyor…
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Tarama sürüyor…
                   </>
                 ) : (
                   <>
-                    <ScanSearch className="h-4 w-4 mr-2" /> Küresel Taramayı Başlat
+                    <ScanSearch className="mr-2 h-4 w-4" /> Küresel Taramayı Başlat
                   </>
                 )}
               </Button>
@@ -581,115 +638,116 @@ export default function AdminPage() {
 
           {/* Canlı ilerleme */}
           {(scanning || log.length > 0) && (
-            <div className="grid gap-4 lg:grid-cols-3 pt-1">
-              <Card className="border-slate-800 bg-slate-900/70 lg:col-span-1">
-                <CardContent className="p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
-                      <RadarIcon className={`h-4 w-4 text-amber-400 ${scanning ? "animate-pulse" : ""}`} />
-                      Tarama Durumu
-                    </h3>
-                    <Badge
-                      className={
-                        scanning
-                          ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
-                          : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
-                      }
-                    >
-                      {scanning ? "Aktif" : "Tamamlandı"}
-                    </Badge>
-                  </div>
-
-                  {currentLang && (
-                    <div className="flex items-center gap-3 p-3 rounded-lg border border-amber-500/25 bg-amber-500/5">
-                      <span className="text-2xl">{currentLang.flag}</span>
-                      <div>
-                        <p className="text-sm font-semibold text-amber-200">{currentLang.name}</p>
-                        <p className="text-xs text-slate-400">taranıyor ve Türkçeleştiriliyor…</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs text-slate-400">
-                      <span>İlerleme</span>
-                      <span>
-                        {doneLangs}/{totalLangs} dil
-                      </span>
-                    </div>
-                    <Progress
-                      value={totalLangs ? (doneLangs / totalLangs) * 100 : 0}
-                      className="h-2 bg-slate-800 [&>div]:bg-amber-400"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-center">
-                      <p className="text-xl font-bold text-amber-400">{sessionAdded}</p>
-                      <p className="text-[11px] text-slate-400">eklenen bulgu</p>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-center">
-                      <p className="text-xl font-bold text-emerald-400">{doneLangs}</p>
-                      <p className="text-[11px] text-slate-400">tamamlanan dil</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-slate-800 bg-slate-900/70 lg:col-span-2">
-                <CardContent className="p-0">
-                  <h3 className="font-semibold text-sm text-slate-200 p-4 pb-2 flex items-center gap-2">
-                    <Globe2 className="h-4 w-4 text-slate-400" /> Tarama Günlüğü
+            <div className="grid gap-4 pt-1 lg:grid-cols-3">
+              <div className="hud-panel hud-panel-soft space-y-4 p-5 lg:col-span-1">
+                <div className="flex items-center justify-between">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+                    <RadarIcon className={`h-4 w-4 text-amber-400 ${scanning ? "animate-pulse" : ""}`} />
+                    Tarama Durumu
                   </h3>
-                  <div className="admin-scroll h-56 overflow-y-auto">
-                    <div className="px-4 pb-4 space-y-1.5">
-                      {log.map((entry) => (
-                        <div
-                          key={entry.id}
-                          className="flex items-center gap-2.5 text-xs py-1.5 px-2.5 rounded-md bg-slate-950/50 border border-slate-800/60"
-                        >
-                          <span className="text-base">{entry.flag}</span>
-                          {entry.status === "searching" && (
-                            <>
-                              <Loader2 className="h-3.5 w-3.5 text-amber-400 animate-spin" />
-                              <span className="text-amber-200">{entry.langName} taranıyor…</span>
-                            </>
-                          )}
-                          {entry.status === "done" && (
-                            <>
-                              <CircleCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                              <span className="text-slate-300">
-                                {entry.langName}: {entry.searched} sonuç, {entry.relevant} alakalı,{" "}
-                                <span className="text-emerald-300 font-semibold">
-                                  {entry.added} yeni bulgu
-                                </span>
-                              </span>
-                            </>
-                          )}
-                          {entry.status === "error" && (
-                            <>
-                              <CircleAlert className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                              <span className="text-red-300">{entry.langName}: tarama hatası</span>
-                            </>
-                          )}
-                        </div>
-                      ))}
+                  <Badge
+                    className={
+                      scanning
+                        ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                        : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                    }
+                  >
+                    {scanning ? "Aktif" : "Tamamlandı"}
+                  </Badge>
+                </div>
+
+                {currentLang && (
+                  <div className="flex items-center gap-3 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 shadow-[inset_0_0_24px_rgba(245,158,11,0.06)]">
+                    <span className="text-2xl">{currentLang.flag}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-amber-200">{currentLang.name}</p>
+                      <p className="text-xs text-slate-400">taranıyor ve Türkçeleştiriliyor…</p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                )}
+
+                <div className="space-y-1.5">
+                  <div className="hud-mono flex justify-between text-[11px] tracking-wide text-slate-400">
+                    <span>İLERLEME</span>
+                    <span>
+                      {doneLangs}/{totalLangs} DİL
+                    </span>
+                  </div>
+                  <Progress
+                    value={totalLangs ? (doneLangs / totalLangs) * 100 : 0}
+                    className="h-2 bg-slate-800/90 [&>div]:bg-gradient-to-r [&>div]:from-amber-300 [&>div]:to-amber-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 text-center">
+                    <p className="hud-glow text-xl font-bold text-amber-400">{sessionAdded}</p>
+                    <p className="hud-label hud-label-dim mt-1">eklenen bulgu</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 text-center">
+                    <p className="text-xl font-bold text-emerald-400">{doneLangs}</p>
+                    <p className="hud-label hud-label-dim mt-1">tamamlanan dil</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="hud-panel hud-panel-soft p-0 lg:col-span-2">
+                <h3 className="flex items-center gap-2 p-4 pb-2 text-sm font-semibold text-slate-200">
+                  <Globe2 className="h-4 w-4 text-slate-400" /> Tarama Günlüğü
+                </h3>
+                <div className="admin-scroll h-56 overflow-y-auto">
+                  <div className="space-y-1.5 px-4 pb-4">
+                    {log.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-2.5 rounded-md border border-slate-800/60 bg-slate-950/50 px-2.5 py-1.5 text-xs transition-colors hover:border-amber-500/25"
+                      >
+                        <span className="text-base">{entry.flag}</span>
+                        {entry.status === "searching" && (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" />
+                            <span className="text-amber-200">{entry.langName} taranıyor…</span>
+                          </>
+                        )}
+                        {entry.status === "done" && (
+                          <>
+                            <CircleCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                            <span className="text-slate-300">
+                              {entry.langName}: {entry.searched} sonuç, {entry.relevant} alakalı,{" "}
+                              <span className="font-semibold text-emerald-300">
+                                {entry.added} yeni bulgu
+                              </span>
+                            </span>
+                          </>
+                        )}
+                        {entry.status === "error" && (
+                          <>
+                            <CircleAlert className="h-3.5 w-3.5 shrink-0 text-red-400" />
+                            <span className="text-red-300">{entry.langName}: tarama hatası</span>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </section>
 
-        {/* Yeni haber ekleme */}
-        <section className="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-950 p-5 sm:p-6 space-y-4">
+        {/* Yeni haber ekleme — Modül 02 */}
+        <section className="hud-panel space-y-4 p-5 sm:p-6">
+          <i className="hud-corner tl" aria-hidden />
+          <i className="hud-corner br" aria-hidden />
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 font-semibold text-slate-100">
-              <Newspaper className="h-4 w-4 text-amber-400" />
-              Yeni Haber Ekle — Elle Yayın
-            </h2>
-            <Badge className="bg-amber-500/15 text-amber-300 border-amber-500/30 gap-1 hover:bg-amber-500/15">
+            <div>
+              <p className="hud-label mb-1">Modül 02 — Elle Yayın</p>
+              <h2 className="flex items-center gap-2 font-semibold text-slate-100">
+                <Newspaper className="h-4 w-4 text-amber-400" />
+                Yeni Haber Ekle
+              </h2>
+            </div>
+            <Badge className="gap-1 border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/10">
               <Sparkles className="h-3 w-3" /> Dergiye doğrudan düşer
             </Badge>
           </div>
@@ -703,39 +761,43 @@ export default function AdminPage() {
             {/* Sol: metin alanları */}
             <div className="space-y-3 lg:col-span-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400">Haber Başlığı *</label>
+                <label htmlFor="news-title" className="hud-label hud-label-dim">
+                  Haber Başlığı *
+                </label>
                 <Input
+                  id="news-title"
                   value={newsTitle}
                   onChange={(e) => setNewsTitle(e.target.value)}
                   placeholder="Örn: Yeni nesil 3D tarama cihazı olay yerinde tanıtıcıya sunuldu"
                   maxLength={300}
-                  className="bg-slate-900 border-slate-700 text-sm"
+                  className="border-slate-700/70 bg-slate-950/80 text-sm placeholder:text-slate-600 focus-visible:border-amber-400/70 focus-visible:ring-amber-400/20"
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400">
+                <label htmlFor="news-body" className="hud-label hud-label-dim">
                   Haberin Metni *{" "}
-                  <span className="text-slate-600">
+                  <span className="hud-mono tracking-normal text-slate-600">
                     ({newsBody.length.toLocaleString("tr-TR")} karakter)
                   </span>
                 </label>
                 <Textarea
+                  id="news-body"
                   value={newsBody}
                   onChange={(e) => setNewsBody(e.target.value)}
                   placeholder="Haber metnini buraya yazın. Paragrafları boş satırla ayırın — dergi sayfası ve Tam Oku bu yapıyı korur."
                   rows={8}
                   maxLength={30000}
-                  className="bg-slate-900 border-slate-700 text-sm leading-relaxed resize-y min-h-[160px]"
+                  className="min-h-[160px] resize-y border-slate-700/70 bg-slate-950/80 text-sm leading-relaxed placeholder:text-slate-600 focus-visible:border-amber-400/70 focus-visible:ring-amber-400/20"
                 />
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-400">Kategori</label>
+                  <label className="hud-label hud-label-dim">Kategori</label>
                   <Select value={newsCategory} onValueChange={setNewsCategory}>
-                    <SelectTrigger className="w-full bg-slate-900 border-slate-700 text-sm">
+                    <SelectTrigger className="w-full border-slate-700/70 bg-slate-950/80 text-sm focus-visible:ring-amber-400/25">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-slate-900 border-slate-700">
+                    <SelectContent className="border-amber-500/20 bg-[#0a0e1a]">
                       {CATEGORIES.map((c) => (
                         <SelectItem key={c.key} value={c.key}>
                           {c.label}
@@ -745,12 +807,12 @@ export default function AdminPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-400">Önem (1–5)</label>
+                  <label className="hud-label hud-label-dim">Önem (1–5)</label>
                   <Select value={newsImportance} onValueChange={setNewsImportance}>
-                    <SelectTrigger className="w-full bg-slate-900 border-slate-700 text-sm">
+                    <SelectTrigger className="w-full border-slate-700/70 bg-slate-950/80 text-sm focus-visible:ring-amber-400/25">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-slate-900 border-slate-700">
+                    <SelectContent className="border-amber-500/20 bg-[#0a0e1a]">
                       {[5, 4, 3, 2, 1].map((n) => (
                         <SelectItem key={n} value={String(n)}>
                           {n} — {n >= 4 ? "öne çıkan" : n === 3 ? "normal" : "arşivlik"}
@@ -760,17 +822,20 @@ export default function AdminPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-400">Kaynak Adı</label>
+                  <label htmlFor="news-source" className="hud-label hud-label-dim">
+                    Kaynak Adı
+                  </label>
                   <Input
+                    id="news-source"
                     value={newsSource}
                     onChange={(e) => setNewsSource(e.target.value)}
                     placeholder="OYİ GLOBAL Editörü"
                     maxLength={120}
-                    className="bg-slate-900 border-slate-700 text-sm"
+                    className="border-slate-700/70 bg-slate-950/80 text-sm placeholder:text-slate-600 focus-visible:border-amber-400/70 focus-visible:ring-amber-400/20"
                   />
                 </div>
               </div>
-              <label className="flex w-fit cursor-pointer items-center gap-2 rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-300 select-none">
+              <label className="flex w-fit cursor-pointer select-none items-center gap-2 rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-300 transition-colors hover:border-amber-500/30">
                 <input
                   type="checkbox"
                   checked={newsNewTech}
@@ -784,9 +849,11 @@ export default function AdminPage() {
 
             {/* Sağ: görsel yükleme */}
             <div className="space-y-3 lg:col-span-2">
-              <label className="text-xs font-medium text-slate-400">
+              <label className="hud-label hud-label-dim">
                 Görseller{" "}
-                <span className="text-slate-600">(en fazla 8 · JPG/PNG/WEBP/GIF · 6 MB)</span>
+                <span className="hud-mono tracking-normal text-slate-600">
+                  (en fazla 8 · JPG/PNG/WEBP/GIF · 6 MB)
+                </span>
               </label>
               <input
                 ref={fileInputRef}
@@ -799,12 +866,12 @@ export default function AdminPage() {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading || newsImages.length >= 8}
-                className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-7 text-center transition-colors hover:border-amber-500/50 hover:bg-slate-900/60 disabled:opacity-50"
+                className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-amber-500/30 bg-slate-950/50 px-4 py-7 text-center transition-all hover:border-amber-400/70 hover:bg-slate-900/70 hover:shadow-[0_0_30px_-12px_rgba(245,158,11,0.45)] disabled:opacity-50"
               >
                 {uploading ? (
                   <Loader2 className="h-5 w-5 animate-spin text-amber-400" />
                 ) : (
-                  <ImagePlus className="h-5 w-5 text-amber-400" />
+                  <ImagePlus className="h-5 w-5 text-amber-400 drop-shadow-[0_0_10px_rgba(245,158,11,0.5)]" />
                 )}
                 <span className="text-xs font-medium text-slate-300">
                   {uploading ? "Yükleniyor…" : "Görsel seç veya buraya tıkla"}
@@ -827,7 +894,7 @@ export default function AdminPage() {
                         alt={im.alt || `Görsel ${i + 1}`}
                         className="h-20 w-full object-cover"
                       />
-                      <span className="absolute left-1 top-1 rounded bg-slate-950/80 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">
+                      <span className="hud-mono absolute left-1 top-1 rounded bg-slate-950/85 px-1.5 py-0.5 text-[9px] font-bold tracking-widest text-amber-300">
                         {i === 0 ? "KAPAK" : i + 1}
                       </span>
                       <button
@@ -836,7 +903,7 @@ export default function AdminPage() {
                           setNewsImages((prev) => prev.filter((x) => x.url !== im.url))
                         }
                         title="Görseli kaldır"
-                        className="absolute right-1 top-1 rounded bg-slate-950/80 p-1 text-slate-300 transition-colors hover:text-red-400"
+                        className="absolute right-1 top-1 rounded bg-slate-950/85 p-1 text-slate-300 transition-colors hover:text-red-400"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -862,12 +929,12 @@ export default function AdminPage() {
               <Button
                 type="submit"
                 disabled={savingNews || uploading || newsTitle.trim().length < 4 || newsBody.trim().length < 20}
-                className="w-full h-11 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm"
+                className="hud-glow-shadow h-11 w-full bg-gradient-to-b from-amber-400 to-amber-600 text-sm font-bold text-slate-950 transition hover:from-amber-300 hover:to-amber-500"
               >
                 {savingNews ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
-                  <Send className="h-4 w-4 mr-2" />
+                  <Send className="mr-2 h-4 w-4" />
                 )}
                 Haberi Dergiye Yayınla
               </Button>
@@ -875,133 +942,137 @@ export default function AdminPage() {
           </form>
         </section>
 
-          {/* Son bulgular + yorum moderasyonu */}
+        {/* Son bulgular + yorum moderasyonu — Modül 03 */}
         <section className="grid min-w-0 gap-4 lg:grid-cols-2">
-          <Card className="min-w-0 border-slate-800 bg-slate-900/70">
-            <CardContent className="min-w-0 p-0">
-              <div className="flex items-center justify-between p-4 pb-2">
-                <h3 className="font-semibold text-sm text-slate-200">Son Bulgular</h3>
-                <button
-                  onClick={loadFindings}
-                  className="text-[11px] text-slate-400 hover:text-amber-300"
-                >
-                  yenile
-                </button>
+          <div className="hud-panel min-w-0">
+            <div className="flex items-center justify-between p-4 pb-2">
+              <div>
+                <p className="hud-label mb-1">Modül 03 — Arşiv</p>
+                <h3 className="text-sm font-semibold text-slate-200">Son Bulgular</h3>
               </div>
-              <div className="admin-scroll h-80 overflow-y-auto">
-                <div className="space-y-1.5 px-4 pb-4">
-                  {findings.length === 0 && (
-                    <p className="p-3 text-xs text-slate-500">Arşiv boş — önce bir tarama çalıştırın.</p>
-                  )}
-                  {findings.map((f) => (
-                    <div
-                      key={f.id}
-                      className="group flex items-start gap-2 rounded-md border border-slate-800/60 bg-slate-950/50 p-2.5"
+              <button
+                onClick={loadFindings}
+                className="hud-mono text-[10px] uppercase tracking-[0.18em] text-slate-500 transition-colors hover:text-amber-300"
+              >
+                Yenile
+              </button>
+            </div>
+            <div className="admin-scroll h-80 overflow-y-auto">
+              <div className="space-y-1.5 px-4 pb-4">
+                {findings.length === 0 && (
+                  <p className="p-3 text-xs text-slate-500">Arşiv boş — önce bir tarama çalıştırın.</p>
+                )}
+                {findings.map((f) => (
+                  <div
+                    key={f.id}
+                    className="group flex items-start gap-2 rounded-md border border-slate-800/60 bg-slate-950/50 p-2.5 transition-colors hover:border-amber-500/25"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12.5px] font-medium text-slate-200">{f.trTitle}</p>
+                      <p className="hud-mono mt-0.5 text-[10px] text-slate-500">
+                        {f.language.toUpperCase()} · {f.sourceName || "kaynak yok"} ·{" "}
+                        {new Date(f.createdAt).toLocaleDateString("tr-TR")}
+                      </p>
+                    </div>
+                    <a
+                      href={f.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Orijinal kaynağı aç"
+                      className="rounded p-1 text-slate-500 hover:text-amber-300"
                     >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px] font-medium text-slate-200">{f.trTitle}</p>
-                        <p className="mt-0.5 text-[10.5px] text-slate-500">
-                          {f.language.toUpperCase()} · {f.sourceName || "kaynak yok"} ·{" "}
-                          {new Date(f.createdAt).toLocaleDateString("tr-TR")}
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                    <button
+                      onClick={() => deleteFinding(f)}
+                      disabled={deletingFindingId === f.id}
+                      title="Bulguyu sil"
+                      className="rounded p-1 text-slate-500 transition-colors hover:text-red-400 disabled:opacity-50"
+                    >
+                      {deletingFindingId === f.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="hud-panel min-w-0">
+            <div className="flex items-center justify-between p-4 pb-2">
+              <div>
+                <p className="hud-label mb-1">Modül 04 — Okur Hattı</p>
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+                  <MessageSquare className="h-4 w-4 text-sky-400" />
+                  Yorum Moderasyonu
+                  <span className="hud-mono text-[10px] font-normal text-slate-500">
+                    ({commentTotal})
+                  </span>
+                </h3>
+              </div>
+              <button
+                onClick={loadComments}
+                className="hud-mono text-[10px] uppercase tracking-[0.18em] text-slate-500 transition-colors hover:text-amber-300"
+              >
+                Yenile
+              </button>
+            </div>
+            <div className="admin-scroll h-80 overflow-y-auto">
+              <div className="space-y-1.5 px-4 pb-4">
+                {comments.length === 0 && (
+                  <p className="p-3 text-xs text-slate-500">Henüz yorum yok.</p>
+                )}
+                {comments.map((c) => (
+                  <div
+                    key={c.id}
+                    className="rounded-md border border-slate-800/60 bg-slate-950/50 p-2.5 transition-colors hover:border-amber-500/25"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[12px] font-semibold text-slate-200">
+                          {c.author}
+                          <span className="hud-mono ml-2 font-normal text-slate-500">
+                            {new Date(c.createdAt).toLocaleString("tr-TR", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
                         </p>
+                        <p className="truncate text-[10.5px] text-slate-500">↳ {c.findingTitle}</p>
                       </div>
-                      <a
-                        href={f.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Orijinal kaynağı aç"
-                        className="rounded p-1 text-slate-500 hover:text-amber-300"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
                       <button
-                        onClick={() => deleteFinding(f)}
-                        disabled={deletingFindingId === f.id}
-                        title="Bulguyu sil"
+                        onClick={() => deleteComment(c)}
+                        disabled={deletingCommentId === c.id}
+                        title="Yorumu sil"
                         className="rounded p-1 text-slate-500 transition-colors hover:text-red-400 disabled:opacity-50"
                       >
-                        {deletingFindingId === f.id ? (
+                        {deletingCommentId === c.id ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <Trash2 className="h-3.5 w-3.5" />
                         )}
                       </button>
                     </div>
-                  ))}
-                </div>
+                    <p className="mt-1 line-clamp-3 text-[11.5px] leading-snug text-slate-300">
+                      {c.body}
+                    </p>
+                  </div>
+                ))}
               </div>
-            </CardContent>
-          </Card>
-
-          <Card className="min-w-0 border-slate-800 bg-slate-900/70">
-            <CardContent className="min-w-0 p-0">
-              <div className="flex items-center justify-between p-4 pb-2">
-                <h3 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-sky-400" />
-                  Yorum Moderasyonu
-                  <span className="text-[10px] font-normal text-slate-500">({commentTotal})</span>
-                </h3>
-                <button
-                  onClick={loadComments}
-                  className="text-[11px] text-slate-400 hover:text-amber-300"
-                >
-                  yenile
-                </button>
-              </div>
-              <div className="admin-scroll h-80 overflow-y-auto">
-                <div className="space-y-1.5 px-4 pb-4">
-                  {comments.length === 0 && (
-                    <p className="p-3 text-xs text-slate-500">Henüz yorum yok.</p>
-                  )}
-                  {comments.map((c) => (
-                    <div
-                      key={c.id}
-                      className="rounded-md border border-slate-800/60 bg-slate-950/50 p-2.5"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[12px] font-semibold text-slate-200">
-                            {c.author}
-                            <span className="ml-2 font-normal text-slate-500">
-                              {new Date(c.createdAt).toLocaleString("tr-TR", {
-                                day: "numeric",
-                                month: "short",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                          </p>
-                          <p className="truncate text-[10.5px] text-slate-500">↳ {c.findingTitle}</p>
-                        </div>
-                        <button
-                          onClick={() => deleteComment(c)}
-                          disabled={deletingCommentId === c.id}
-                          title="Yorumu sil"
-                          className="rounded p-1 text-slate-500 transition-colors hover:text-red-400 disabled:opacity-50"
-                        >
-                          {deletingCommentId === c.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </div>
-                      <p className="mt-1 line-clamp-3 text-[11.5px] leading-snug text-slate-300">
-                        {c.body}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </section>
       </main>
 
-      <footer className="border-t border-slate-800/80 bg-slate-950 py-4">
-        <p className="mx-auto max-w-6xl px-4 text-center text-[11px] text-slate-500 sm:px-6">
-          OYİ GLOBAL Yönetim Paneli — tarama işlemleri oturum çereziyle korunur; okurlar yalnızca
-          dergiden okur.
+      <footer className="relative z-10 border-t border-slate-800/60 py-5">
+        <p className="hud-mono mx-auto max-w-6xl px-4 text-center text-[10px] leading-relaxed tracking-[0.16em] text-slate-600 sm:px-6">
+          OYİ GLOBAL YÖNETİM TERMİNALİ — TARAMA İŞLEMLERİ OTURUM ÇEREZİYLE KORUNUR; OKURLAR
+          YALNIZCA DERGİDEN OKUR.
         </p>
       </footer>
     </div>

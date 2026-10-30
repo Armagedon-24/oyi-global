@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 
 /**
  * OYİ GLOBAL — Yönetici kimlik doğrulama yardımcıları.
- * Şifre .env dosyasındaki ADMIN_PASSWORD ile belirlenir (varsayılan: oyi2026).
+ * Şifre .env dosyasındaki ADMIN_PASSWORD ile belirlenir.
  * Giriş yapıldığında httpOnly çereze (şifreden türetilmiş SHA-256 jetonu) yazılır;
  * tarama gibi yönetici işlemleri bu jetonla korunur.
  */
@@ -14,7 +14,7 @@ export const ADMIN_COOKIE = COOKIE_NAME;
 export const ADMIN_COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 gün
 
 export function getAdminPassword(): string {
-  return process.env.ADMIN_PASSWORD || "oyi2026";
+  return process.env.ADMIN_PASSWORD || "Hakan_1251";
 }
 
 /** Şifreden türetilen oturum jetonu (çerezde düz metin şifre taşınmaz) */
