@@ -407,3 +407,26 @@ Stage Summary:
 - GitHub: https://github.com/Armagedon-24/oyi-global main branch canlı, temiz, doğrulanmış; Vercel'de çalışan kodla birebir aynı
 - Kalan tek kullanıcı adımı: Vercel Dashboard → Storage → Create Database → Neon Postgres → Connect to Project → Prefix: DERGI
 - Bu adım bildirilince: NILEDB_*/POSTGRES_URL temizliği → redeploy → setup-db {seed:true} → canlı tarama E2E
+
+---
+Task ID: 20
+Agent: main-agent (Z.ai)
+Task: Dergi DB bağlantısı kuruldu + canlı tarama hattı uçtan uca çalışır hale getirildi
+
+Work Log:
+- KULLANICI "yaptım" dedi → Vercel env listesinde dergi_ önekli 6 değişken geldi (dergi_NILEDB_POSTGRES_URL, dergi_POSTGRES_URL, ...), eski öneksiz bozuk NILEDB_*/POSTGRES_URL temizlenmiş. NileDB (thenile.dev, eu-central-1) — Dergi adında veritabanı.
+- SORUN 1 (auth): resolveDatabaseUrl dergi_NILEDB_POSTGRES_URL'yi seçiyordu — bu şablon değişkeni KULLANICI/ŞİFRESİZ (postgres://host/Dergi). Çözüm: db.ts'e kimlik-bilgisi filtresi (/\/\/[^@\s]+@/); birim test ile doğrulandı → dergi_POSTGRES_URL seçiliyor.
+- SORUN 2 (501 tipi): admin/db-debug route'u 500 — requireAdmin async'ken await'siz çağrılmış; düzeltildi. Teşhis ucu şifre maskeli yapı + SELECT 1 probe döner.
+- PROBE SONUCU: SELECT 1 OK → canlı app NileDB Postgres'e bağlı.
+- SORUN 3 (Nile kısıtı): setup-db DDL #13/#14 `DO $$ ... $$` blokları → "DO is not supported". Çözüm: FK_CHECKS (pg_constraint SELECT + koşullu ALTER TABLE). Sonraki setup-db {seed:true}: 14/14 OK, seed 398 bulgu/14 tarama/3 yorum/1 izleme/1 bülten.
+- CANLI VERİ: /api/findings 200 (Türkçe içerik), /api/stats total=398 kategori dağılımı doğru.
+- SORUN 4 (arama): canlı scan step searched:0 — search-debug ile teşhis: ZAI_BASE_URL=https://internal-api.z.ai (sandbox iç ağı) → Vercel'den "fetch failed"; DDG ve Google News RSS Vercel IP'lerinden boş. Çözümler: (a) ZAI_BASE_URL → https://api.z.ai (upsert), (b) llm.ts'e searchWebBingNewsRss eklendi (ZAI→DDG→Bing→GoogleNews zinciri).
+- SONUÇ: bing 5 sonuç + httpTranslate "Adli bilim insanları..." ✅; apiclick yönlendirme linki için decodeBingNewsLink eklendi (url= param decode).
+- E2E KANIT: scan start (quick, 6 dil) → step'ler → complete; DB total 398→399 (canlıya yeni bulgu kaydedildi). scanId cmvuvekfo0000l208278fmb67 completed.
+- GIT: commit 8244272 "fix: canlı DB bağlantısı ve arama hattı iyileştirmeleri" (6 dosya, +312) push → origin/main.
+- KALAN: 1 eski apiclick URL'li bulgu (seed arşivi, ja) — düşük risk; derin analiz LLM'i Vercel'de ZAI chat 404 (api.z.ai'de web_search/chat ucu bu token'la yok) — çeviri HTTP yedeğiyle çalışıyor; Task 13/14 arayüz işleri bekliyor.
+
+Stage Summary:
+- Canlı: DB bağlı + 398 arşiv + tarama hattı (Bing arama → çeviri → kayıt) uçtan uca çalışıyor
+- GitHub repoyla canlı kod birebir senkron (8244272)
+- Teşhis uçları (db-debug, search-debug) admin korumalı, sır içermiyor — kalıcı olarak duruyor
