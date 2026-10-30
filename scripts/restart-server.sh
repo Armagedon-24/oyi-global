@@ -13,6 +13,13 @@ fi
 sleep 1
 
 echo "Sunucu setsid ile başlatılıyor..."
+# Önemli: dış ortamda kalmış eski DATABASE_URL kalıntıları .env değerini gölgelemesin;
+# Next.js var olan process.env değerini .env ile EZMEZ. Bu yüzden önce temizlenip
+# .env açıkça yüklenir.
+unset DATABASE_URL POSTGRES_URL POSTGRES_PRISMA_URL
+set -a
+. /home/z/my-project/.env
+set +a
 setsid -f nohup bun run dev > /tmp/next-dev.log 2>&1 < /dev/null
 
 for i in $(seq 1 45); do

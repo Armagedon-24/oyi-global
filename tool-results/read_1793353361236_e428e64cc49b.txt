@@ -1,0 +1,724 @@
+     1→     1→/**
+     2→     2→ * OYİ GLOBAL — Z-AI SDK yardımcıları
+     3→     3→ * web_search, Türkçe çeviri/kategorizasyon ve derin analiz fonksiyonları
+     4→     4→ */
+     5→     5→import ZAI from "z-ai-web-dev-sdk";
+     6→     6→import { CATEGORY_KEYS, categoryLabel, type ScanLanguage } from "./forensics-config";
+     7→     7→
+     8→     8→let zaiInstance: ZAI | null = null;
+     9→     9→let zaiInitPromise: Promise<ZAI> | null = null;
+    10→    10→
+    11→    11→/**
+    12→    12→ * ZAI istemcisini döndürür.
+    13→    13→ * Öncelik sırası:
+    14→    14→ *  1) ZAI_BASE_URL + ZAI_API_KEY ortam değişkenleri (Vercel/Netlify vb. bulut
+    15→    15→ *     dağıtımlarında .z-ai-config dosyası bulunamadığı için gereklidir),
+    16→    16→ *  2) standart .z-ai-config dosyası (yerel geliştirme ortamı).
+    17→    17→ */
+    18→    18→export async function getZAI(): Promise<ZAI> {
+    19→    19→  if (zaiInstance) return zaiInstance;
+    20→    20→  if (!zaiInitPromise) {
+    21→    21→    zaiInitPromise = (async () => {
+    22→    22→      const baseUrl = process.env.ZAI_BASE_URL?.trim();
+    23→    23→      const apiKey = process.env.ZAI_API_KEY?.trim();
+    24→    24→      if (baseUrl && apiKey) {
+    25→    25→        // SDK kurucusu tip tanımında private olarak işaretlidir; ortam
+    26→    26→        // değişkenleriyle doğrudan yapılandırma için güvenli tip geçişi gerekir.
+    27→    27→        const Ctor = ZAI as unknown as new (config: Record<string, string>) => ZAI;
+    28→    28→        zaiInstance = new Ctor({
+    29→    29→          baseUrl,
+    30→    30→          apiKey,
+    31→    31→          chatId: process.env.ZAI_CHAT_ID?.trim() ?? "",
+    32→    32→          userId: process.env.ZAI_USER_ID?.trim() ?? "",
+    33→    33→          token: process.env.ZAI_TOKEN?.trim() ?? "",
+    34→    34→        });
+    35→    35→        return zaiInstance;
+    36→    36→      }
+    37→    37→      zaiInstance = await ZAI.create();
+    38→    38→      return zaiInstance;
+    39→    39→    })();
+    40→    40→    zaiInitPromise.catch(() => {
+    41→    41→      // Başarısız init sonrası tekrar denemeye izin ver
+    42→    42→      zaiInitPromise = null;
+    43→    43→    });
+    44→    44→  }
+    45→    45→  return zaiInitPromise;
+    46→    46→}
+    47→    47→
+    48→    48→export interface RawSearchItem {
+    49→    49→  url: string;
+    50→    50→  name: string;
+    51→    51→  snippet: string;
+    52→    52→  host_name: string;
+    53→    53→  date: string;
+    54→    54→}
+    55→    55→
+    56→    56→/**
+    57→    57→ * Bir sorgu için web araması yapar; hata olursa boş liste döner.
+    58→    58→ * Önce Z-AI web_search denenir; kullanılamıyorsa (yapılandırma eksik,
+    59→    59→ * ağ erişimi yok — ör. Vercel) DuckDuckGo HTML aramasına düşülür.
+    60→    60→ */
+    61→    61→export async function searchWeb(query: string, num = 10, recencyDays = 365): Promise<RawSearchItem[]> {
+    62→    62→  try {
+    63→    63→    const zai = await getZAI();
+    64→    64→    const results = (await zai.functions.invoke("web_search", {
+    65→    65→      query,
+    66→    66→      num,
+    67→    67→      recency_days: recencyDays,
+    68→    68→    })) as RawSearchItem[];
+    69→    69→    if (Array.isArray(results) && results.length > 0) return results;
+    70→    70→  } catch (err) {
+    71→    71→    console.error(`[searchWeb] Z-AI araması başarısız (${query}), DuckDuckGo yedeğine düşülüyor:`, err);
+    72→    72→  }
+    73→    73→  return searchWebDuckDuckGo(query, num);
+    74→    74→}
+    75→    75→
+    76→    76→const DDG_UA =
+    77→    77→  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+    78→    78→
+    79→    79→/**
+    80→    80→ * DuckDuckGo HTML araması (API anahtarı gerektirmez). Z-AI web_search
+    81→    81→ * kullanılamadığında yedek arama motoru olarak çalışır.
+    82→    82→ */
+    83→    83→export async function searchWebDuckDuckGo(query: string, num = 10): Promise<RawSearchItem[]> {
+    84→    84→  try {
+    85→    85→    const res = await fetch(
+    86→    86→      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+    87→    87→      {
+    88→    88→        headers: {
+    89→    89→          "User-Agent": DDG_UA,
+    90→    90→          Accept: "text/html,application/xhtml+xml",
+    91→    91→          "Accept-Language": "tr,en;q=0.8",
+    92→    92→        },
+    93→    93→        signal: AbortSignal.timeout(15000),
+    94→    94→        cache: "no-store",
+    95→    95→      }
+    96→    96→    );
+    97→    97→    if (!res.ok) return [];
+    98→    98→    const html = await res.text();
+    99→    99→
+   100→   100→    const anchorRe = /<a\s([^>]*class="[^"]*result__a[^"]*"[^>]*)>([\s\S]*?)<\/a>/g;
+   101→   101→    const snippetRe = /<a\s([^>]*class="[^"]*result__snippet[^"]*"[^>]*)>([\s\S]*?)<\/a>/g;
+   102→   102→
+   103→   103→    const snippets: string[] = [];
+   104→   104→    let sm: RegExpExecArray | null;
+   105→   105→    while ((sm = snippetRe.exec(html)) !== null) {
+   106→   106→      snippets.push(tagText(sm[2]).slice(0, 600));
+   107→   107→    }
+   108→   108→
+   109→   109→    const items: RawSearchItem[] = [];
+   110→   110→    let m: RegExpExecArray | null;
+   111→   111→    while ((m = anchorRe.exec(html)) !== null && items.length < num) {
+   112→   112→      const hrefMatch = m[1].match(/href="([^"]+)"/);
+   113→   113→      if (!hrefMatch) continue;
+   114→   114→      let href = hrefMatch[1].replace(/&amp;/g, "&");
+   115→   115→      if (href.startsWith("//")) href = `https:${href}`;
+   116→   116→      if (/duckduckgo\.com\/l\//i.test(href)) {
+   117→   117→        try {
+   118→   118→          const real = new URL(href).searchParams.get("uddg");
+   119→   119→          if (!real) continue;
+   120→   120→          href = real;
+   121→   121→        } catch {
+   122→   122→          continue;
+   123→   123→        }
+   124→   124→      }
+   125→   125→      if (!/^https?:\/\//i.test(href)) continue;
+   126→   126→      if (/duckduckgo\.com\/y\.js/i.test(href)) continue; // reklam bağlantısı
+   127→   127→      const title = tagText(m[2]);
+   128→   128→      if (!title || title.length < 3) continue;
+   129→   129→      let host = "";
+   130→   130→      try {
+   131→   131→        host = new URL(href).hostname;
+   132→   132→      } catch {
+   133→   133→        continue;
+   134→   134→      }
+   135→   135→      items.push({
+   136→   136→        url: href,
+   137→   137→        name: title,
+   138→   138→        snippet: snippets[items.length] ?? "",
+   139→   139→        host_name: host,
+   140→   140→        date: "",
+   141→   141→      });
+   142→   142→    }
+   143→   143→    return items;
+   144→   144→  } catch (err) {
+   145→   145→    console.error(`[searchWebDuckDuckGo] Arama hatası (${query}):`, err);
+   146→   146→    return [];
+   147→   147→  }
+   148→   148→}
+   149→   149→
+   150→   150→export interface TranslateInput {
+   151→   151→  index: number;
+   152→   152→  title: string;
+   153→   153→  snippet: string;
+   154→   154→}
+   155→   155→
+   156→   156→export interface TranslatedFinding {
+   157→   157→  index: number;
+   158→   158→  trTitle: string;
+   159→   159→  trSummary: string;
+   160→   160→  category: string;
+   161→   161→  importance: number; // 1-5
+   162→   162→  isNewTech: boolean;
+   163→   163→  keywords: string[];
+   164→   164→}
+   165→   165→
+   166→   166→const TRANSLATE_SYSTEM_PROMPT = `Sen uluslararası adli bilimler (forensic science) alanında uzmanlaşmış profesyonel bir çevirmen ve analistsin.
+   167→   167→Görevin: Dünyanın dillerinden birinde gelen olay yeri inceleme / adli bilim haberlerini TÜRKÇE'ye çevirmek ve analiz etmek.
+   168→   168→
+   169→   169→Her madde için şunları üret:
+   170→   170→1. trTitle: Orijinal başlığın doğal ve profesyonel Türkçe çevirisi (teknik terimleri doğru kullan: "fingerprint" = "parmak izi", "trace evidence" = "iz delili", "chain of custody" = "delil zinciri" vb.)
+   171→   171→2. trSummary: Orijinal özetin 2-4 cümlelik akıcı Türkçe özeti. İçerikteki teknik yeniliği, yöntemi ve önemi vurgula.
+   172→   172→3. category: Şu anahtarlardan EN UYGUN olanı seç: ${CATEGORY_KEYS.join(", ")}
+   173→   173→4. importance: 1-5 arası önem puanı (5 = alanı dönüştürecek büyük kırılma, 1 = sıradan haber)
+   174→   174→5. isNewTech: İçerik somut bir YENİ teknik/teknoloji/araç/cihaz tanıtıyorsa true, yoksa false
+   175→   175→6. keywords: 3-5 adet TÜRKÇE anahtar kelime (uzman terminolojisiyle)
+   176→   176→
+   177→   177→YALNIZCA geçerli JSON döndür. Biçim:
+   178→   178→[{"index":0,"trTitle":"...","trSummary":"...","category":"dna","importance":4,"isNewTech":true,"keywords":["a","b","c"]}]`;
+   179→   179→
+   180→   180→/** LLM ile toplu çeviri + kategorizasyon. Hata durumunda kısmi sonuç döner. */
+   181→   181→export async function translateAndClassifyBatch(
+   182→   182→  items: TranslateInput[],
+   183→   183→  lang: ScanLanguage
+   184→   184→): Promise<TranslatedFinding[]> {
+   185→   185→  if (items.length === 0) return [];
+   186→   186→
+   187→   187→  const userPrompt = `Kaynak dil: ${lang.name} (${lang.code}).
+   188→   188→Aşağıdaki ${items.length} adet adli bilimler / olay yeri inceleme haberini Türkçe'ye çevir ve analiz et.
+   189→   189→Dikkat: Reklam, genel haber, alakasız içerik varsa category="genel", importance=1 ver.
+   190→   190→
+   191→   191→GIRDİ (JSON):
+   192→   192→${JSON.stringify(items, null, 1)}`;
+   193→   193→
+   194→   194→  for (let attempt = 1; attempt <= 2; attempt++) {
+   195→   195→    try {
+   196→   196→      const zai = await getZAI();
+   197→   197→      const completion = await zai.chat.completions.create({
+   198→   198→        messages: [
+   199→   199→          { role: "assistant", content: TRANSLATE_SYSTEM_PROMPT },
+   200→   200→          { role: "user", content: userPrompt },
+   201→   201→        ],
+   202→   202→        thinking: { type: "disabled" },
+   203→   203→      });
+   204→   204→
+   205→   205→      const raw = completion?.choices?.[0]?.message?.content ?? "";
+   206→   206→      const parsed = extractJsonArray(raw);
+   207→   207→      if (!parsed) throw new Error("JSON ayrıştırılamadı");
+   208→   208→
+   209→   209→      const valid = parsed
+   210→   210→        .filter((it: any) => typeof it?.index === "number" && it?.trTitle)
+   211→   211→        .map((it: any) => ({
+   212→   212→          index: it.index,
+   213→   213→          trTitle: String(it.trTitle).slice(0, 300),
+   214→   214→          trSummary: String(it.trSummary ?? "").slice(0, 1200),
+   215→   215→          category: CATEGORY_KEYS.includes(it.category) ? it.category : "genel",
+   216→   216→          importance: Math.min(5, Math.max(1, Number(it.importance) || 3)),
+   217→   217→          isNewTech: Boolean(it.isNewTech),
+   218→   218→          keywords: Array.isArray(it.keywords)
+   219→   219→            ? it.keywords.slice(0, 5).map((k: any) => String(k).slice(0, 40))
+   220→   220→            : [],
+   221→   221→        })) as TranslatedFinding[];
+   222→   222→
+   223→   223→      if (valid.length > 0) return valid;
+   224→   224→      throw new Error("Geçerli sonuç boş");
+   225→   225→    } catch (err) {
+   226→   226→      console.error(`[translateBatch] Deneme ${attempt} başarısız:`, err);
+   227→   227→      if (attempt === 2) {
+   228→   228→        // Fallback: çevrilmemiş ama kayıtlı olsun
+   229→   229→        return items.map((it) => ({
+   230→   230→          index: it.index,
+   231→   231→          trTitle: it.title.slice(0, 300),
+   232→   232→          trSummary: it.snippet.slice(0, 500) + " [Otomatik çeviri başarısız oldu]",
+   233→   233→          category: "genel",
+   234→   234→          importance: 2,
+   235→   235→          isNewTech: false,
+   236→   236→          keywords: [],
+   237→   237→        }));
+   238→   238→      }
+   239→   239→      await new Promise((r) => setTimeout(r, 1200));
+   240→   240→    }
+   241→   241→  }
+   242→   242→  return [];
+   243→   243→}
+   244→   244→
+   245→   245→/** Metin içinden JSON dizisini çıkarır (kod bloğu / ek met toleranslı) */
+   246→   246→function extractJsonArray(text: string): any[] | null {
+   247→   247→  if (!text) return null;
+   248→   248→  const cleaned = text.replace(/```json/gi, "```").trim();
+   249→   249→  const start = cleaned.indexOf("[");
+   250→   250→  const end = cleaned.lastIndexOf("]");
+   251→   251→  if (start === -1 || end === -1 || end <= start) return null;
+   252→   252→  try {
+   253→   253→    return JSON.parse(cleaned.slice(start, end + 1));
+   254→   254→  } catch {
+   255→   255→    return null;
+   256→   256→  }
+   257→   257→}
+   258→   258→
+   259→   259→/**
+   260→   260→ * Derin analiz: sayfanın tam metnini okuyup yapılandırılmış Türkçe rapor üretir.
+   261→   261→ * Dönen değer markdown formatındadır.
+   262→   262→ */
+   263→   263→export async function generateDeepAnalysis(
+   264→   264→  url: string,
+   265→   265→  originalTitle: string,
+   266→   266→  trTitle: string,
+   267→   267→  language: string
+   268→   268→): Promise<string> {
+   269→   269→  let pageText = "";
+   270→   270→  try {
+   271→   271→    const zai = await getZAI();
+   272→   272→    const page = (await zai.functions.invoke("page_reader", { url })) as any;
+   273→   273→    const html: string = page?.data?.html ?? "";
+   274→   274→    pageText = stripHtml(html).slice(0, 6000);
+   275→   275→  } catch (err) {
+   276→   276→    console.error("[generateDeepAnalysis] Sayfa okunamadı:", err);
+   277→   277→  }
+   278→   278→
+   279→   279→  const fallbackText = pageText
+   280→   280→    ? pageText
+   281→   281→    : `Sayfa içeriği okunamadı. Yalnızca başlık kullanılabilir: ${originalTitle}`;
+   282→   282→
+   283→   283→  const prompt = `Aşağıda ${language} dilinde yayınlanmış, olay yeri inceleme / adli bilimler alanındaki bir makalenin tam metni var.
+   284→   284→
+   285→   285→MAKALE BAŞLIĞI: ${originalTitle}
+   286→   286→URL: ${url}
+   287→   287→
+   288→   288→MAKALE İÇERİĞİ:
+   289→   289→${fallbackText}
+   290→   290→
+   291→   291→GÖREV: Bu makalenin profesyonel ve derinlemesine bir TÜRKÇE analiz raporu yaz. Adli bilimler uzmanı bir olay yeri inceleme görevlisine hitap ediyormuş gibi, teknik ve net bir dille yaz.
+   292→   292→
+   293→   293→Raporu tam olarak şu markdown yapısıyla üret:
+   294→   294→
+   295→   295→## 📋 Genel Bakış
+   296→   296→(2-3 cümle: makalenin konusu ve neden önemli olduğu)
+   297→   297→
+   298→   298→## 🔬 Teknik Detaylar
+   299→   299→(Makalede anlatılan yöntem/teknoloji/araç teknik olarak nasıl çalışıyor? Madde işaretleriyle açıkla. İçerikte bilgi yoksa makale bağlamından makul çıkarımlar yap ama uydurma.)
+   300→   300→
+   301→   301→## 🎯 Olay Yeri İncelemesine Katkısı
+   302→   302→(Bu gelişme olay yeri inceleme süreçlerini nasıl iyileştiriyor? Kanıt toplanma, doğruluk, hız, maliyet boyutlarında değerlendir.)
+   303→   303→
+   304→   304→## 🌍 Küresel Bağlam
+   305→   305→(Bu teknoloji dünyada hangi ülkelerde/kurumlarda geliştiriliyor veya kullanılıyor; benzer gelişmelerle karşılaştırma.)
+   306→   306→
+   307→   307→## 🇹🇷 Türkiye İçin Çıkarımlar
+   308→   308→(Türkiye'deki adli birimler ve olay yeri inceleme ekipleri için bu gelişmenin ne anlamı var, nasıl faydalanılabilir.)
+   309→   309→
+   310→   310→## ⚠️ Sınırlılıklar ve Etik Boyut
+   311→   311→(Teknolojinin eksileri, hukuki/etik tartışmaları, standart süreçler varsa belirt.)
+   312→   312→
+   313→   313→Uyarılar:
+   314→   314→- YALNIZCA markdown üret, giriş/cıkış cümleleri ekleme.
+   315→   315→- Makalede olmayan bilgiyi uydurma; emin olmadığın yerde "makalede belirtilmemiştir" de.
+   316→   316→- Teknik terimlerin Türkçe karşılıklarını parantez içinde orijinaliyle ver.`;
+   317→   317→
+   318→   318→  try {
+   319→   319→    const zai = await getZAI();
+   320→   320→    const completion = await zai.chat.completions.create({
+   321→   321→      messages: [
+   322→   322→        {
+   323→   323→          role: "assistant",
+   324→   324→          content:
+   325→   325→            "Sen adli bilimler ve olay yeri inceleme alanında uzmanlaşmış bir analistsin. Yalnızca istenen markdown raporu üretirsin.",
+   326→   326→        },
+   327→   327→        { role: "user", content: prompt },
+   328→   328→      ],
+   329→   329→      thinking: { type: "disabled" },
+   330→   330→    });
+   331→   331→    const content = completion?.choices?.[0]?.message?.content ?? "";
+   332→   332→    if (content.trim().length > 100) return content.trim();
+   333→   333→    throw new Error("Analiz içeriği çok kısa");
+   334→   334→  } catch (err) {
+   335→   335→    console.error("[generateDeepAnalysis] LLM hatası:", err);
+   336→   336→    return `## ⚠️ Analiz Üretilemedi\n\nBu bulgu için derin analiz şu anda üretilemedi. Lütfen birazdan tekrar deneyin.\n\n**Kaynak:** ${url}`;
+   337→   337→  }
+   338→   338→}
+   339→   339→
+   340→   340→/** Basit HTML temizleyici */
+   341→   341→function stripHtml(html: string): string {
+   342→   342→  return html
+   343→   343→    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+   344→   344→    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+   345→   345→    .replace(/<[^>]+>/g, " ")
+   346→   346→    .replace(/&nbsp;/g, " ")
+   347→   347→    .replace(/&amp;/g, "&")
+   348→   348→    .replace(/&lt;/g, "<")
+   349→   349→    .replace(/&gt;/g, ">")
+   350→   350→    .replace(/&quot;/g, '"')
+   351→   351→    .replace(/&#39;/g, "'")
+   352→   352→    .replace(/\s+/g, " ")
+   353→   353→    .trim();
+   354→   354→}
+   355→   355→
+   356→   356→/* ------------------------------------------------------------------ */
+   357→   357→/* TAM MAKALE GETİRME + TÜRKÇELEŞTİRME (Tam Oku penceresi için)        */
+   358→   358→/* ------------------------------------------------------------------ */
+   359→   359→
+   360→   360→export interface FullArticleResult {
+   361→   361→  title: string; // Türkçe başlık (çevrildiyse)
+   362→   362→  paragraphs: string[]; // Tam metin paragrafları (Türkçe)
+   363→   363→  wordCount: number; // Çevrilen/okunan toplam kelime sayısı
+   364→   364→  engine: "direct" | "page_reader" | "none"; // Sayfa hangi yolla okundu
+   365→   365→  translated: boolean; // Gerçekten çeviri yapıldı mı
+   366→   366→}
+   367→   367→
+   368→   368→const FULL_TEXT_LIMIT = 12000; // Kaynak metin üst sınırı (karakter)
+   369→   369→const CHUNK_LIMIT = 3800; // Her çeviri parçasının üst sınırı
+   370→   370→
+   371→   371→/** HTML tag dizesinin iç metnini temizler */
+   372→   372→function tagText(html: string): string {
+   373→   373→  return html
+   374→   374→    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+   375→   375→    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+   376→   376→    .replace(/<[^>]+>/g, " ")
+   377→   377→    .replace(/&nbsp;/gi, " ")
+   378→   378→    .replace(/&amp;/gi, "&")
+   379→   379→    .replace(/&lt;/gi, "<")
+   380→   380→    .replace(/&gt;/gi, ">")
+   381→   381→    .replace(/&quot;/gi, '"')
+   382→   382→    .replace(/&#0?39;/gi, "'")
+   383→   383→    .replace(/&#x27;/gi, "'")
+   384→   384→    .replace(/\s+/g, " ")
+   385→   385→    .trim();
+   386→   386→}
+   387→   387→
+   388→   388→/**
+   389→   389→ * Makale HTML'inden paragraf yapısını koruyarak ana metni çıkarır:
+   390→   390→ * script/style/nav/header/footer/aside/form atılır, <p> blokları sırayla toplanır.
+   391→   391→ */
+   392→   392→export function extractArticleParagraphs(html: string, maxChars = FULL_TEXT_LIMIT): string[] {
+   393→   393→  if (!html) return [];
+   394→   394→  const cleaned = html
+   395→   395→    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+   396→   396→    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+   397→   397→    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+   398→   398→    .replace(/<(nav|header|footer|aside|form|button|svg)[\s\S]*?<\/\1>/gi, " ");
+   399→   399→
+   400→   400→  const paras: string[] = [];
+   401→   401→  const pRe = /<p\s[^>]*>([\s\S]*?)<\/p\s*>/gi;
+   402→   402→  let m: RegExpExecArray | null;
+   403→   403→  let total = 0;
+   404→   404→  while ((m = pRe.exec(cleaned)) !== null) {
+   405→   405→    const text = tagText(m[1]);
+   406→   406→    // Menü/tanıtım cümlecikleri ve tek kelimelik başlıkları ele
+   407→   407→    if (text.length < 45 || text.split(/\s+/).length < 7) continue;
+   408→   408→    // Aşırı bağlantı dolu paragraflar genelde navigasyondur
+   409→   409→    const linkCount = (m[1].match(/<a\s/gi) ?? []).length;
+   410→   410→    if (linkCount > 4) continue;
+   411→   411→    paras.push(text);
+   412→   412→    total += text.length;
+   413→   413→    if (total >= maxChars) break;
+   414→   414→  }
+   415→   415→
+   416→   416→  // <p> yoksa (bazı sayfalarda metin div'lerde) tüm sayfa metnine düş
+   417→   417→  if (paras.length === 0) {
+   418→   418→    const all = stripHtml(cleaned);
+   419→   419→    if (all.length > 200) {
+   420→   420→      // Cümle sınırlarına göre kaba paragraf bölümlemesi
+   421→   421→      const sentences = all.split(/(?<=[.!?。!?])\s+/);
+   422→   422→      let buf = "";
+   423→   423→      for (const s of sentences) {
+   424→   424→        buf = buf ? `${buf} ${s}` : s;
+   425→   425→        if (buf.length >= 320) {
+   426→   426→          paras.push(buf.trim());
+   427→   427→          buf = "";
+   428→   428→          if (paras.join(" ").length >= maxChars) break;
+   429→   429→        }
+   430→   430→      }
+   431→   431→      if (buf.trim().length > 60) paras.push(buf.trim());
+   432→   432→    }
+   433→   433→  }
+   434→   434→
+   435→   435→  return paras.slice(0, 150);
+   436→   436→}
+   437→   437→
+   438→   438→/**
+   439→   439→ * Sayfayı okur: önce hızlı doğrudan indirme, olmazsa page_reader yedeği.
+   440→   440→ */
+   441→   441→async function fetchPageHtmlForText(
+   442→   442→  url: string
+   443→   443→): Promise<{ html: string; engine: FullArticleResult["engine"] }> {
+   444→   444→  try {
+   445→   445→    const { fetchPageHtmlDirect } = await import("./image-extract");
+   446→   446→    const html = await fetchPageHtmlDirect(url, 11000);
+   447→   447→    if (html && html.length > 500) return { html, engine: "direct" };
+   448→   448→  } catch {
+   449→   449→    /* yedeğe düş */
+   450→   450→  }
+   451→   451→  try {
+   452→   452→    const zai = await getZAI();
+   453→   453→    const page = (await Promise.race([
+   454→   454→      zai.functions.invoke("page_reader", { url }) as Promise<any>,
+   455→   455→      new Promise((_, rej) => setTimeout(() => rej(new Error("zaman aşımı")), 22000)),
+   456→   456→    ])) as any;
+   457→   457→    const html: string = page?.data?.html ?? "";
+   458→   458→    if (html) return { html, engine: "page_reader" };
+   459→   459→  } catch {
+   460→   460→    /* her iki yol da başarısız */
+   461→   461→  }
+   462→   462→  return { html: "", engine: "none" };
+   463→   463→}
+   464→   464→
+   465→   465→function splitIntoChunks(paras: string[]): string[][] {
+   466→   466→  const chunks: string[][] = [];
+   467→   467→  let buf: string[] = [];
+   468→   468→  let size = 0;
+   469→   469→  for (const p of paras) {
+   470→   470→    if (size + p.length > CHUNK_LIMIT && buf.length > 0) {
+   471→   471→      chunks.push(buf);
+   472→   472→      buf = [];
+   473→   473→      size = 0;
+   474→   474→    }
+   475→   475→    buf.push(p);
+   476→   476→    size += p.length;
+   477→   477→  }
+   478→   478→  if (buf.length > 0) chunks.push(buf);
+   479→   479→  return chunks;
+   480→   480→}
+   481→   481→
+   482→   482→/** Bir parçayı (paragraf listesini) Türkçeye çevirir; paragraf sayısını korumaya çalışır */
+   483→   483→async function translateChunk(chunk: string[], langName: string): Promise<string[]> {
+   484→   484→  const prompt = `Aşağıda ${langName} dilinde bir haber makalesinden ${chunk.length} adet paragraf var.
+   485→   485→Her paragrafı profesyonel, akıcı TÜRKÇE'ye çevir (adli bilimler / olay yeri inceleme alanı).
+   486→   486→
+   487→   487→KURALLAR:
+   488→   488→- Girdideki paragraf SAYISINI ve SIRASINI aynen koru; paragrafları boş satırla ayır.
+   489→   489→- Başlık veya yorum EKLEME; yalnızca çeviriyi üret.
+   490→   490→- Teknik terimlerin Türkçe karşılığını ver, gerekirse parantezle orijinalini ekle.
+   491→   491→- Bir paragraf anlamsız/geçersizse onu kısa bir "(çevrilemedi)" ibaresiyle boş geçme, atla.
+   492→   492→
+   493→   493→PARAGRAFLAR:
+   494→   494→${chunk.map((p, i) => `--${i + 1}--\n${p}`).join("\n\n")}`;
+   495→   495→
+   496→   496→  for (let attempt = 1; attempt <= 2; attempt++) {
+   497→   497→    try {
+   498→   498→      const zai = await getZAI();
+   499→   499→      const completion = await zai.chat.completions.create({
+   500→   500→        messages: [
+   501→   501→          {
+   502→   502→            role: "assistant",
+   503→   503→            content:
+   504→   504→              "Sen adli bilimler alanında uzmanlaşmış profesyonel bir çevirmensin. Yalnızca istenen çeviriyi, paragraf yapısını koruyarak üretirsin.",
+   505→   505→          },
+   506→   506→          { role: "user", content: prompt },
+   507→   507→        ],
+   508→   508→        thinking: { type: "disabled" },
+   509→   509→      });
+   510→   510→      const raw = completion?.choices?.[0]?.message?.content ?? "";
+   511→   511→      const parts = raw
+   512→   512→        .replace(/```[a-z]*\n?/gi, "")
+   513→   513→        .split(/\n{2,}/)
+   514→   514→        .map((s) => s.replace(/^--\d+--\s*/g, "").trim())
+   515→   515→        .filter((s) => s.length > 2);
+   516→   516→      if (parts.length >= Math.max(1, Math.floor(chunk.length * 0.6))) return parts;
+   517→   517→      throw new Error(`Paragraf sayısı uyuşmadı (${parts.length}/${chunk.length})`);
+   518→   518→    } catch (err) {
+   519→   519→      console.error(`[translateChunk] Deneme ${attempt} başarısız:`, err);
+   520→   520→      if (attempt === 2) {
+   521→   521→        // Çevrilemeyen parçanın orijinali kalsın (kullanıcı yine de okuyabilsin)
+   522→   522→        return chunk.map((p) => `${p} *(çevrilemedi)*`);
+   523→   523→      }
+   524→   524→      await new Promise((r) => setTimeout(r, 1000));
+   525→   525→    }
+   526→   526→  }
+   527→   527→  return chunk;
+   528→   528→}
+   529→   529→
+   530→   530→/**
+   531→   531→ * Tam Oku: makalenin TAM metnini kaynaktan okur ve Türkçeye çevirir.
+   532→   532→ * Kaynak dil Türkçeyse çeviri atlanır. Hata durumunda mümkün olan kısmı döndürür.
+   533→   533→ */
+   534→   534→export async function fetchAndTranslateFullArticle(
+   535→   535→  url: string,
+   536→   536→  originalTitle: string,
+   537→   537→  trTitle: string,
+   538→   538→  language: string
+   539→   539→): Promise<FullArticleResult> {
+   540→   540→  const { html, engine } = await fetchPageHtmlForText(url);
+   541→   541→
+   542→   542→  if (engine === "none" || !html) {
+   543→   543→    // Sayfa okunamadı — boş sonuç; çağıran taraf özete düşer
+   544→   544→    return { title: trTitle, paragraphs: [], wordCount: 0, engine: "none", translated: false };
+   545→   545→  }
+   546→   546→
+   547→   547→  const sourceParas = extractArticleParagraphs(html);
+   548→   548→  const isTurkish = /^tr\b/i.test(language) || /türk/i.test(language);
+   549→   549→
+   550→   550→  if (isTurkish) {
+   551→   551→    return {
+   552→   552→      title: trTitle,
+   553→   553→      paragraphs: sourceParas,
+   554→   554→      wordCount: sourceParas.join(" ").split(/\s+/).filter(Boolean).length,
+   555→   555→      engine,
+   556→   556→      translated: false,
+   557→   557→    };
+   558→   558→  }
+   559→   559→
+   560→   560→  if (sourceParas.length === 0) {
+   561→   561→    return { title: trTitle, paragraphs: [], wordCount: 0, engine, translated: false };
+   562→   562→  }
+   563→   563→
+   564→   564→  const chunks = splitIntoChunks(sourceParas);
+   565→   565→  const translatedParts: string[] = [];
+   566→   566→  for (const chunk of chunks) {
+   567→   567→    const done = await translateChunk(chunk, language);
+   568→   568→    translatedParts.push(...done);
+   569→   569→  }
+   570→   570→
+   571→   571→  const paragraphs = translatedParts.filter((p) => p && p.trim()).slice(0, 150);
+   572→   572→  return {
+   573→   573→    title: trTitle,
+   574→   574→    paragraphs,
+   575→   575→    wordCount: paragraphs.join(" ").split(/\s+/).filter(Boolean).length,
+   576→   576→    engine,
+   577→   577→    translated: true,
+   578→   578→  };
+   579→   579→}
+   580→   580→
+   581→   581→/**
+   582→   582→ * AI Haftalık Bülten: arşivdeki son bulgulardan uzman anlatı özeti üretir.
+   583→   583→ * Dönen değer markdown formatındadır.
+   584→   584→ */
+   585→   585→export async function generateBriefing(
+   586→   586→  items: {
+   587→   587→    trTitle: string;
+   588→   588→    trSummary: string;
+   589→   589→    category: string;
+   590→   590→    importance: number;
+   591→   591→    isNewTech: boolean;
+   592→   592→    language: string;
+   593→   593→    sourceName: string;
+   594→   594→    publishedDate: string | null;
+   595→   595→  }[]
+   596→   596→): Promise<string> {
+   597→   597→  const compact = items.map((it, i) => ({
+   598→   598→    n: i + 1,
+   599→   599→    baslik: it.trTitle,
+   600→   600→    ozet: it.trSummary.slice(0, 220),
+   601→   601→    kategori: categoryLabel(it.category),
+   602→   602→    onem: it.importance,
+   603→   603→    yenilik: it.isNewTech,
+   604→   604→    kaynak: it.sourceName,
+   605→   605→    dil: it.language,
+   606→   606→  }));
+   607→   607→
+   608→   608→  const prompt = `Aşağıda olay yeri inceleme / adli bilimler izleme arşivinden ${items.length} adet güncel bulgu var.
+   609→   609→Bu bulguları inceleyerek profesyonel bir TÜRKÇE istihbarat bülteni yaz. Okuyucu: adli bilimler uzmanı, olay yeri inceleme görevlisi ve emniyet/kriminalistik yöneticileri.
+   610→   610→
+   611→   611→BULGULAR (JSON):
+   612→   612→${JSON.stringify(compact, null, 1)}
+   613→   613→
+   614→   614→Bülteni tam olarak şu markdown yapısıyla üret:
+   615→   615→
+   616→   616→## 🎯 Yönetici Özeti
+   617→   617→(3-5 cümle: bu dönemde alanın genel gidişatı, en çarpıcı 2-3 gelişme ve genel eğilim — anlatı diliyle)
+   618→   618→
+   619→   619→## 🔺 Öne Çıkan Gelişmeler
+   620→   620→(En önemli 5-7 bulguyu "### " alt başlıklarıyla tek tek ele al: ne olduğu, neden önemli, hangi boşluğu dolduruyor. Her başlıkta bulgu numarasına [B#n] şeklinde atıf ver.)
+   621→   621→
+   622→   622→## 🧪 Yükselen Teknolojiler
+   623→   623→(isNewTech=true olan bulgulardan sentez: hangi teknolojik akımlar öne çıkıyor — örn. yapay zekâ destekli analiz, taşınabilir cihazlar, 3B belgeleme vb. 2-4 madde)
+   624→   624→
+   625→   625→## 🌍 Bölgesel Görünüm
+   626→   626→(Kaynak dilleri/kayıp ülkeleri göz önünde bulundurarak hangi bölgelerde hangi konulara odaklanıldığını yorumla. Veri azsa bunu dürüstçe belirt.)
+   627→   627→
+   628→   628→## 📌 Öneriler ve İzlenecekler
+   629→   629→(Uzman ekipler için 3-5 pratik öneri + önümüzdeki dönemde izlenmesi gereken konular. Madde işaretli.)
+   630→   630→
+   631→   631→Uyarılar:
+   632→   632→- YALNIZCA markdown üret, giriş/cıkış cümleleri ekleme.
+   633→   633→- Bulgularda olmayan bilgiyi UYDURMA; sentez yap, alıntı yapma.
+   634→   634→- Bulguları "B1, B5" gibi numara atıflarıyla referans göster.
+   635→   635→- Profesyonel ama akıcı bir istihbarat raporu dili kullan.`;
+   636→   636→
+   637→   637→  for (let attempt = 1; attempt <= 2; attempt++) {
+   638→   638→    try {
+   639→   639→      const zai = await getZAI();
+   640→   640→      const completion = await zai.chat.completions.create({
+   641→   641→        messages: [
+   642→   642→          {
+   643→   643→            role: "assistant",
+   644→   644→            content:
+   645→   645→              "Sen uluslararası adli bilimler istihbaratı alanında uzmanlaşmış bir bülten editörüsün. Yalnızca istenen markdown raporu üretirsin.",
+   646→   646→          },
+   647→   647→          { role: "user", content: prompt },
+   648→   648→        ],
+   649→   649→        thinking: { type: "disabled" },
+   650→   650→      });
+   651→   651→      const content = completion?.choices?.[0]?.message?.content ?? "";
+   652→   652→      if (content.trim().length > 200) return content.trim();
+   653→   653→      throw new Error("Bülten içeriği çok kısa");
+   654→   654→    } catch (err) {
+   655→   655→      console.error(`[generateBriefing] Deneme ${attempt} başarısız:`, err);
+   656→   656→      if (attempt === 2) {
+   657→   657→        return `## ⚠️ Bülten Üretilemedi\n\nŞu anda bülten oluşturulamadı. Lütfen birkaç dakika sonra tekrar deneyin.`;
+   658→   658→      }
+   659→   659→      await new Promise((r) => setTimeout(r, 1500));
+   660→   660→    }
+   661→   661→  }
+   662→   662→  return `## ⚠️ Bülten Üretilemedi\n\nLütfen tekrar deneyin.`;
+   663→   663→}
+   664→   664→
+   665→   665→/** Asistan konuşma mesajı tipi */
+   666→   666→export interface AssistantMessage {
+   667→   667→  role: "user" | "assistant";
+   668→   668→  content: string;
+   669→   669→}
+   670→   670→
+   671→   671→/**
+   672→   672→ * AI İstihbarat Asistanı: arşiv bağlamı + güncel web araması ile Türkçe yanıt üretir.
+   673→   673→ */
+   674→   674→export async function assistantReply(
+   675→   675→  history: AssistantMessage[],
+   676→   676→  archiveContext: string,
+   677→   677→  webContext: string
+   678→   678→): Promise<string> {
+   679→   679→  const lastUser =
+   680→   680→    [...history].reverse().find((m) => m.role === "user")?.content ?? "";
+   681→   681→
+   682→   682→  const systemPrompt = `Sen OYİ GLOBAL'in AI İstihbarat Asistanısın: olay yeri inceleme teknikleri ve adli bilimler alanında uzmanlaşmış, TÜRKÇE konuşan bir analistsin.
+   683→   683→
+   684→   684→GÖREVİN:
+   685→   685→- Kullanıcının sorularını, verilen ARŞİV BAĞLAMI ve gerekirse GENEL BİLGİNle yanıtla.
+   686→   686→- Arşivde ilgili bulgu varsa bunlara [B#n] koduyla atıf yap ve kaynak adını söyle.
+   687→   687→- Küresel perspektif ver: hangi ülke/kurum ne yapıyor, hangi yöntem öne çıkıyor.
+   688→   688→- Teknik terimlerin Türkçe karşılığını parantez içinde orijinaliyle ver (örn. "iz delili (trace evidence)").
+   689→   689→- Yanıtlarını markdown ile yapılandır: kısa paragraflar, gerektiğinde madde işaretleri.
+   690→   690→- Alanla ilgisiz sorularda kibarca alanına yönlendir.
+   691→   691→- Emin olmadığın bilgiyi uydurma; "kesin bilgi bulunamadı" deyip kaynak öner.
+   692→   692→
+   693→   693→${archiveContext}
+   694→   694→${webContext}`;
+   695→   695→
+   696→   696→  const messages: { role: "assistant" | "user"; content: string }[] = [
+   697→   697→    { role: "assistant", content: systemPrompt },
+   698→   698→    // Son 8 mesajı koru (bağlam penceresi)
+   699→   699→    ...history.slice(-8).map((m) => ({ role: m.role, content: m.content })),
+   700→   700→  ];
+   701→   701→
+   702→   702→  for (let attempt = 1; attempt <= 2; attempt++) {
+   703→   703→    try {
+   704→   704→      const zai = await getZAI();
+   705→   705→      const completion = await zai.chat.completions.create({
+   706→   706→        messages,
+   707→   707→        thinking: { type: "disabled" },
+   708→   708→      });
+   709→   709→      const content = completion?.choices?.[0]?.message?.content ?? "";
+   710→   710→      if (content.trim().length > 2) return content.trim();
+   711→   711→      throw new Error("Boş yanıt");
+   712→   712→    } catch (err) {
+   713→   713→      console.error(`[assistantReply] Deneme ${attempt} başarısız:`, err);
+   714→   714→      if (attempt === 2) {
+   715→   715→        return `## ⚠️\nYanıt üretilirken bir sorun oluştu. Lütfen sorunuzu tekrar iletin.\n\n*(Soru: "${lastUser.slice(0, 120)}")*`;
+   716→   716→      }
+   717→   717→      await new Promise((r) => setTimeout(r, 1200));
+   718→   718→    }
+   719→   719→  }
+   720→   720→  return "Yanıt üretilemedi, lütfen tekrar deneyin.";
+   721→   721→}
+   722→   722→
+   723→   723→export { categoryLabel };
+   724→   724→

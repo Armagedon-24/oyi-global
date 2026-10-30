@@ -4,12 +4,14 @@
  * Kullanım (proje kökünde, sırayla):
  *   1) Tabloları oluştur:
  *      DATABASE_URL="postgres://<kul>:<sifre>@<host>/<db>?sslmode=require" bunx prisma db push --schema prisma/schema.postgres.prisma
- *   2) Geçici Postgres Prisma istemcisini üret:
- *      bunx prisma generate --schema prisma/schema.postgres.prisma --output prisma/pg-client-gen
+ *   2) Geçici Postgres Prisma istemcisini üret (--output Prisma 6'da şema içindedir):
+ *      bunx prisma generate --schema prisma/schema.migrate.prisma
  *   3) Veriyi taşı:
  *      PG_URL="postgres://<kul>:<sifre>@<host>/<db>?sslmode=require" bun scripts/migrate-sqlite-to-postgres.mjs
  *
- * Not: 2. adımdaki pg-client-gen klasörü geçicidir; taşıma sonrası silinebilir.
+ * Not: 2. adımdaki prisma/pg-client-gen klasörü geçicidir; taşıma sonrası silinebilir.
+ * Otomatik alternatif: tablo kurulumu + veri aktarımı için /api/admin/setup-db
+ * (POST { "seed": true }) kullanılabilir — terminal gerekmez.
  */
 import { PrismaClient as SqliteClient } from "@prisma/client";
 import { PrismaClient as PgClient } from "../prisma/pg-client-gen/index.js";

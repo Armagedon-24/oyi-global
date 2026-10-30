@@ -4,7 +4,7 @@ import { assistantReply, searchWeb, type AssistantMessage } from "@/lib/llm";
 import { categoryLabel, getLanguage } from "@/lib/forensics-config";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 /**
  * POST /api/assistant

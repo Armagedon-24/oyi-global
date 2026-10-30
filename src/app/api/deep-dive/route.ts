@@ -4,7 +4,7 @@ import { generateDeepAnalysis } from "@/lib/llm";
 import { extractImagesFromArticle, type ExtractedImage } from "@/lib/image-extract";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 /**
  * Bulgunun görsellerini garanti eder:

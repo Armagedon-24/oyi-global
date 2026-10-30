@@ -6,7 +6,7 @@ import { extractImagesFromArticle } from "@/lib/image-extract";
 import { requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 const MAX_NEW_PER_STEP = 8; // Her adımda çevrilecek maksimum yeni bulgu
 const MIN_SNIPPET_LEN = 25;

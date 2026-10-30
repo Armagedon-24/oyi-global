@@ -329,3 +329,26 @@ Stage Summary:
 - Görsel yükleme dosya sisteminden bağımsızlaştı (base64 data URL) → Vercel'de haber ekleme + görsel çalışıyor
 - Hata mesajları dürüstleşti: DB sorunu artık "oturum süresi dolmuş" olarak gizlenmiyor
 - Değişen dosyalar: llm.ts, image-utils.ts, api/admin/upload, api/admin/findings, api/scan/start, api/scan/step, admin/page.tsx; Yeni: prisma/schema.postgres.prisma, vercel.json, scripts/migrate-sqlite-to-postgres.mjs, scripts/verify-vercel-fixes.mjs
+
+---
+Task ID: 16
+Agent: main-agent (Z.ai)
+Task: Vercel canlı tarama hatası — kalıcı çözüm (Postgres kurulum + otomatik veri taşıma + serverless dayanıklılık)
+
+Work Log:
+- CANLI TEŞHİS (curl, oyi-global.vercel.app): ana sayfa 200, login 200 (Hakan_1251) AMA /api/stats ve /api/findings 500 → veritabanına dokunan her yol ölü; kullanıcı v2 paketini deploy etmişti ama (a) Vercel'de veritabanı bağlı değildi, (b) db.ts yalnız DATABASE_URL okuyordu.
+- KÖK NEDEN 1 — BAĞLANTI ÇÖZÜMLEME: Vercel/Neon entegrasyonları değişkenleri önekli ekleyebilir (örn. STORAGE_URL_DATABASE_URL); db.ts bu adları tanımıyordu. → src/lib/db.ts yeniden yazıldı: resolveDatabaseUrl() sırayla NON_POOLING/UNPOOLED → DATABASE_URL → *DATABASE_URL → POSTGRES_PRISMA_URL → POSTGRES_URL → bilinen ilk postgres adresini dener; datasourceUrl ile istemciye verilir; prod log ['error'].
+- KÖK NEDEN 2 — TABLOLAR + ARŞİV: Postgres boş olacak; terminal gerektirmeden kurulamıyordu. → YENİ route src/app/api/admin/setup-db (yalnız yönetici): 14 adımlık idempotent DDL (tablolar+indexler+FK'lar, DO $$ blokları) + { seed:true } ile depoda bundled src/data/seed-dump.json içeriğini (398 bulgu, 3 yorum, 14 tarama, 1 izleme kelimesi, 1 bülten) boş tablolara aktarır. scripts/export-sqlite-json.mjs ile SQLite'tan üretildi (759 KB).
+- KÖK NEDEN 3 — FONKSİYON SÜRESİ: maxDuration 120/300 olan route'lar Vercel Hobby üst sınırını aşabilirdi (deploy hatası/timeout). → hepsi 60 sn'ye sabitlendi (scan/step, briefing, deep-dive, full-article, assistant, enrich-images).
+- DAYANIKLILIK — ÇEVİRİ ZİNCİRİ: llm.ts'e httpTranslate eklendi (Google clients5 dict-chrome-ex → gtx → MyMemory; cümle sınırlı parçalama); translateAndClassifyBatch ve translateChunk fallback'leri artık Vercel'de (Z-AI yokken) gerçek Türkçe çeviri üretir; hepsi başarısızsa önceki davranış (orijinal metin + ibare).
+- DAYANIKLILIK — ARAMA ZİNCİRİ: searchWeb = Z-AI → DuckDuckGo → searchWebGoogleNewsRss (yeni; ancak Google News yönlendirme linkleri artık şifreli AU_yqL formatında olduğundan çözülemeyen linkler atlanır —_DD birincil yedek olarak kaldı). verify-vercel-fixes.mjs DDG testi "Yedek arama zinciri"ne çevrildi.
+- PRISMA: schema.postgres.prisma generator'una binaryTargets ["native","rhel-openssl-3.0.x"]; Prisma 6'da --output CLI opsiyonu kalktığı için taşıma istemcisi için prisma/schema.migrate.prisma (output=./pg-client-gen) eklendi; migrate script başlığı güncellendi.
+- YEREL E2E — GERÇEK POSTGRES 16.15 (Zonky embedded, port 5433): (1) db push oyi_push ✓; (2) setup-db route + seed oyi_setup (boş db) ✓ 14/14 DDL + 398 bulgu; (3) yapı parite: information_schema/pg_indexes/pg_constraint karşılaştırması — kolon/index/FK TAM eşleşme ✓; (4) migrate-sqlite-to-postgres.mjs oyi_mig ✓ (14/398/3/1/1); (5) verify-vercel-fixes.mjs 8/8 PASS (postgres'e bağlı sunucuda); (6) canlı scan/step E2E ✓ (success, tekrar eleme doğru).
+- ORTAM TUZAĞI BULUNDU: kalıcı shell'de eski DATABASE_URL=file:... kalıntısı Next.js'in .env'ini gölgelemiş (Next mevcut env'i EZMEZ) → "URL must start with postgresql://" hatası; scripts/restart-server.sh artık env'i unset edip .env'i açıkça yüklüyor.
+- GERİ DÖNÜŞ: .env SQLite'a alındı (file:../db/custom.db), sqlite istemcisi yeniden üretildi, restart + stats/findings/login 200; 8/8 verify PASS.
+- PAKET: download/oyi-global-proje-2026-10-30-v3.zip (prisma/pg-client-gen 38 MB hariç tutuldu); VERCEL-KURULUM.md (adım adım Türkçe rehber) projeye eklendi.
+
+Stage Summary:
+- Tarama hatasının üç katmanı çözüldü: bağlantı (önekli env çözümü), şema (otomatik DDL route'u), veri (seed-dump ile arşiv taşıma) — kullanıcı terminal kullanmadan canlı kurulabilir
+- Kullanıcı akışı: (1) Vercel Storage'da Dergi'yi projeye bağla (Skip değil Connect), (2) GitHub'a güncel dosyaları yükle → otomatik redeploy, (3) /api/admin/setup-db {seed:true} tek isteği (sohbetten talep üzerine otomatik çalıştırılır), (4) /admin'den Tarama Başlat
+- Yerel geliştirme SQLite ile aynen sürüyor; canlı Postgres ile çalışıyor; iki şema dosyası build'de vercel.json ile ayrıştırılıyor

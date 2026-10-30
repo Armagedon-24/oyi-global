@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { generateBriefing } from "@/lib/llm";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 /** Bir bulguyu bülten girdisine çevirir (llm.ts bekleyen form) */
 function toBriefingItem(f: any) {

@@ -4,7 +4,7 @@ import { extractImagesFromArticle } from "@/lib/image-extract";
 import { requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 /**
  * POST /api/enrich-images  Body: { limit? }

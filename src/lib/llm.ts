@@ -68,9 +68,11 @@ export async function searchWeb(query: string, num = 10, recencyDays = 365): Pro
     })) as RawSearchItem[];
     if (Array.isArray(results) && results.length > 0) return results;
   } catch (err) {
-    console.error(`[searchWeb] Z-AI araması başarısız (${query}), DuckDuckGo yedeğine düşülüyor:`, err);
+    console.error(`[searchWeb] Z-AI araması başarısız (${query}), yedeğe düşülüyor:`, err);
   }
-  return searchWebDuckDuckGo(query, num);
+  const ddg = await searchWebDuckDuckGo(query, num).catch(() => []);
+  if (ddg.length > 0) return ddg;
+  return searchWebGoogleNewsRss(query, num);
 }
 
 const DDG_UA =
@@ -144,6 +146,169 @@ export async function searchWebDuckDuckGo(query: string, num = 10): Promise<RawS
   } catch (err) {
     console.error(`[searchWebDuckDuckGo] Arama hatası (${query}):`, err);
     return [];
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Ücretsiz HTTP çeviri zinciri — Z-AI kullanılamadığında yedek        */
+/* Sıra: Google clients5 → Google gtx → MyMemory                       */
+/* ------------------------------------------------------------------ */
+
+/** Metni cümle/sözcük sınırından taşmadan parçalara böler */
+function splitForHttpTranslate(text: string, maxLen: number): string[] {
+  if (text.length <= maxLen) return [text];
+  const parts: string[] = [];
+  let rest = text;
+  while (rest.length > maxLen) {
+    const window = rest.slice(0, maxLen);
+    let cut = -1;
+    for (const sep of [". ", "! ", "? ", "; ", ", ", " "]) {
+      const idx = window.lastIndexOf(sep);
+      if (idx > maxLen * 0.5) {
+        cut = idx + sep.length;
+        break;
+      }
+    }
+    if (cut <= 0) cut = maxLen;
+    parts.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  if (rest.trim()) parts.push(rest);
+  return parts;
+}
+
+async function translateViaClients5(text: string, src: string): Promise<string> {
+  const res = await fetch(
+    `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${encodeURIComponent(src)}&tl=tr&q=${encodeURIComponent(text)}`,
+    { headers: { "User-Agent": DDG_UA }, signal: AbortSignal.timeout(9000), cache: "no-store" }
+  );
+  if (!res.ok) return "";
+  const data: unknown = await res.json();
+  if (Array.isArray(data) && Array.isArray(data[0])) {
+    return (data[0] as unknown[])
+      .map((seg) => (Array.isArray(seg) ? String(seg[0] ?? "") : String(seg ?? "")))
+      .join("")
+      .trim();
+  }
+  if (Array.isArray(data) && typeof data[0] === "string") return (data[0] as string).trim();
+  return "";
+}
+
+async function translateViaGtx(text: string, src: string): Promise<string> {
+  const res = await fetch(
+    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(src)}&tl=tr&dt=t&q=${encodeURIComponent(text)}`,
+    { headers: { "User-Agent": DDG_UA }, signal: AbortSignal.timeout(12000), cache: "no-store" }
+  );
+  if (!res.ok) return "";
+  const data: unknown = await res.json();
+  if (Array.isArray(data) && Array.isArray(data[0])) {
+    return (data[0] as unknown[]).map((seg) => String((seg as unknown[])?.[0] ?? "")).join("").trim();
+  }
+  return "";
+}
+
+async function translateViaMyMemory(text: string, src: string): Promise<string> {
+  const res = await fetch(
+    `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.slice(0, 450))}&langpair=${encodeURIComponent(src)}|tr`,
+    { headers: { "User-Agent": DDG_UA }, signal: AbortSignal.timeout(9000), cache: "no-store" }
+  );
+  if (!res.ok) return "";
+  const data: any = await res.json();
+  const t = data?.responseData?.translatedText;
+  return typeof t === "string" && !/^MYMEMORY WARNING/i.test(t) ? t.trim() : "";
+}
+
+/**
+ * Z-AI kullanılamadığında (örn. Vercel) ücretsiz servislerle Türkçeye çevirir.
+ * Hepsinin başarısız olduğu durumda boş metin döner; çağıran taraf orijinali kullanır.
+ */
+export async function httpTranslate(text: string, src = "auto"): Promise<string> {
+  const clean = (text ?? "").trim();
+  if (!clean) return "";
+  const source = src && src.trim().length >= 2 ? src.trim() : "auto";
+  const out: string[] = [];
+  for (const part of splitForHttpTranslate(clean, 1200)) {
+    try {
+      const t =
+        (await translateViaClients5(part, source).catch(() => "")) ||
+        (await translateViaGtx(part, source).catch(() => "")) ||
+        (await translateViaMyMemory(part, source).catch(() => ""));
+      if (!t) return "";
+      out.push(t);
+    } catch {
+      return "";
+    }
+  }
+  return out.join(" ").trim();
+}
+
+/**
+ * Google News RSS araması (anahtar gerektirmez, bot engellemesine dayanıklı).
+ * DuckDuckGo da başarısız olursa son yedek arama kaynağı olarak kullanılır.
+ * Google News bağlantıları kodlanmış yönlendirme adresleri olduğu için
+ * gerçek makale URL'si base64 yükünden çıkarılır; çözülemeyenler atlanır.
+ */
+export async function searchWebGoogleNewsRss(query: string, num = 10): Promise<RawSearchItem[]> {
+  try {
+    const res = await fetch(
+      `https://news.google.com/rss/search?q=${encodeURIComponent(query)}`,
+      {
+        headers: { "User-Agent": DDG_UA, Accept: "application/rss+xml,application/xml,text/xml" },
+        signal: AbortSignal.timeout(15000),
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return [];
+    const xml = await res.text();
+
+    const items: RawSearchItem[] = [];
+    const itemRe = /<item>([\s\S]*?)<\/item>/g;
+    let m: RegExpExecArray | null;
+    while ((m = itemRe.exec(xml)) !== null && items.length < num) {
+      const block = m[1];
+      const pickTag = (tag: string): string => {
+        const t = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+        return t ? t[1].replace(/<!\[CDATA\[/g, "").replace(/\]\]>/g, "").trim() : "";
+      };
+      const title = tagText(pickTag("title"))
+        .replace(/\s+-\s+[^-]{2,60}$/u, "")
+        .trim();
+      const rawLink = pickTag("link");
+      const link = decodeGoogleNewsLink(rawLink);
+      if (!link || !title || title.length < 8) continue;
+      const pubDate = pickTag("pubDate");
+      let date = "";
+      if (pubDate) {
+        const d = new Date(pubDate);
+        if (!isNaN(d.getTime())) date = d.toISOString().slice(0, 10);
+      }
+      let host = "";
+      try {
+        host = new URL(link).hostname;
+      } catch {
+        continue;
+      }
+      items.push({ url: link, name: title, snippet: "", host_name: host, date });
+    }
+    return items;
+  } catch (err) {
+    console.error(`[searchWebGoogleNewsRss] Arama hatası (${query}):`, err);
+    return [];
+  }
+}
+
+/** Google News yönlendirme bağlantısını gerçek makale adresine çözer */
+function decodeGoogleNewsLink(link: string): string {
+  try {
+    const u = new URL(link);
+    if (!/news\.google\.com$/i.test(u.hostname)) return link;
+    const id = u.pathname.split("/articles/")[1] ?? "";
+    if (!id) return "";
+    const decoded = Buffer.from(id.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("binary");
+    const m = decoded.match(/https?:\/\/[!-~]+/);
+    return m ? m[0] : "";
+  } catch {
+    return "";
   }
 }
 
@@ -225,16 +390,25 @@ ${JSON.stringify(items, null, 1)}`;
     } catch (err) {
       console.error(`[translateBatch] Deneme ${attempt} başarısız:`, err);
       if (attempt === 2) {
-        // Fallback: çevrilmemiş ama kayıtlı olsun
-        return items.map((it) => ({
-          index: it.index,
-          trTitle: it.title.slice(0, 300),
-          trSummary: it.snippet.slice(0, 500) + " [Otomatik çeviri başarısız oldu]",
-          category: "genel",
-          importance: 2,
-          isNewTech: false,
-          keywords: [],
-        }));
+        // Fallback: Z-AI yoksa ücretsiz HTTP çevirisi; o da olmazsa orijinal kaydedilir
+        const source = lang?.code || "auto";
+        return Promise.all(
+          items.map(async (it) => {
+            const trTitle = await httpTranslate(it.title.slice(0, 300), source);
+            const trSummary = await httpTranslate(it.snippet.slice(0, 700), source);
+            return {
+              index: it.index,
+              trTitle: (trTitle || it.title).slice(0, 300),
+              trSummary:
+                (trSummary || it.snippet.slice(0, 500)) +
+                (trTitle || trSummary ? "" : " [Otomatik çeviri başarısız oldu]"),
+              category: "genel",
+              importance: 2,
+              isNewTech: false,
+              keywords: [],
+            };
+          })
+        );
       }
       await new Promise((r) => setTimeout(r, 1200));
     }
@@ -518,8 +692,13 @@ ${chunk.map((p, i) => `--${i + 1}--\n${p}`).join("\n\n")}`;
     } catch (err) {
       console.error(`[translateChunk] Deneme ${attempt} başarısız:`, err);
       if (attempt === 2) {
-        // Çevrilemeyen parçanın orijinali kalsın (kullanıcı yine de okuyabilsin)
-        return chunk.map((p) => `${p} *(çevrilemedi)*`);
+        // Z-AI yoksa ücretsiz HTTP çevirisi; çevrilemeyen paragraf orijinal kalsın
+        return Promise.all(
+          chunk.slice(0, 40).map(async (p) => {
+            const t = p.length <= 1200 ? await httpTranslate(p, langName).catch(() => "") : "";
+            return t || `${p} *(çevrilemedi)*`;
+          })
+        );
       }
       await new Promise((r) => setTimeout(r, 1000));
     }

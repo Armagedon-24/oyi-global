@@ -4,7 +4,7 @@
  * Farklı adres: BASE=https://... bun scripts/verify-vercel-fixes.mjs
  */
 import sharp from "sharp";
-import { searchWebDuckDuckGo } from "../src/lib/llm.ts";
+import { searchWeb } from "../src/lib/llm.ts";
 
 const BASE = process.env.BASE || "http://localhost:3000";
 const PASSWORD = process.env.ADMIN_PASSWORD || "Hakan_1251";
@@ -91,12 +91,12 @@ if (news.success) {
   check("Test haberi temizlendi", delRes.status === 200 && del.success === true);
 }
 
-// 6) DuckDuckGo yedek arama (Z-AI kullanılamadığında taramanın çalışması için)
+// 6) Yedek arama zinciri (Z-AI kullanılamadığında: DuckDuckGo → Google News RSS)
 try {
-  const items = await searchWebDuckDuckGo("olay yeri inceleme parmak izi teknolojisi", 5);
-  check("DuckDuckGo yedek arama", Array.isArray(items) && items.length > 0, `${items.length} sonuç`);
+  const items = await searchWeb("olay yeri inceleme parmak izi teknolojisi", 5);
+  check("Yedek arama zinciri (Z-AI → DDG → RSS)", Array.isArray(items) && items.length > 0, `${items.length} sonuç`);
 } catch (e) {
-  check("DuckDuckGo yedek arama", false, String(e));
+  check("Yedek arama zinciri (Z-AI → DDG → RSS)", false, String(e));
 }
 
 const failed = results.filter((r) => !r).length;
