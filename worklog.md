@@ -388,3 +388,22 @@ Stage Summary:
 - Kod artık GitHub'da: herkese açık repo, sıfır sır (ADMIN_PASSWORD/.env, ZAI config, Vercel token repo dışında)
 - Canlının ve reponun kodu birebir aynı (485baa8) → ileride Vercel GitHub entegrasyonu bağlanırsa otomatik deploy güvenle açılabilir
 - Tek bekleyen kullanıcı adımı: Vercel Storage'da Dergi entegrasyonunu (prefix DERGI) Connect etmek
+
+---
+Task ID: 19
+Agent: main-agent (Z.ai)
+Task: Düzeltilmiş fine-grained GitHub token ile gerçek push + doğrulama
+
+Work Log:
+- TOKEN DOĞRULAMA: /user → 200, login=Armagedon-24 (önceki denemedeki "Invalid username or token" sorunu çözüldü — token sonuna yapışan "yeni" kelimesi kullanıcının düzeltmesiyle gitti).
+- REPO İZNİ: GET /repos/Armagedon-24/oyi-global → permissions {admin, maintain, push, triage, pull: true} → Contents yazma yetkisi kesinleşti.
+- PUSH GERÇEKLEŞTİ: `git push -u origin main` → 485baa8..435f6ab (HEAD 435f6ab; Task 18 sonrası oluşan 1 commit dahil toplam geçmiş uzakta). Branch tracking kuruldu.
+- DOĞRULAMA: ls-remote == yerel HEAD ✓; commit listesi (435f6ab, 485baa8 güvenlik commit'i, 7470e40) uzakta ✓; kök ağaç 22 girdi.
+- GÜVENLİK DENETİMİ (push sonrası API ile): .env → 404 (repoda YOK) ✓; kritik 7 dosya (package.json, vercel.json, 3 şema, db.ts, setup-db, seed-dump.json) → 200 ✓; `git log --all -p` içinde github_pat_/ghp_/vcp_ örüntüsü → 0 eşleşme (sır yok) ✓.
+- VERCEL STORAGE TEKRAR DENEMESİ: v1 ve v2 storage create uçları → not_found (proje-kapsamlı vcp_ token için kapalı) → DB oluşturma kesin olarak kullanıcı Dashboard adımı.
+- ENV LİSTESİ KONTROLÜ: hâlâ 12 değişken, DERGI_ öneki yok → kullanıcı Dergi/Neon bağlantısını henüz yapmadı; zincir (temizlik→redeploy→setup-db→E2E) beklemede.
+
+Stage Summary:
+- GitHub: https://github.com/Armagedon-24/oyi-global main branch canlı, temiz, doğrulanmış; Vercel'de çalışan kodla birebir aynı
+- Kalan tek kullanıcı adımı: Vercel Dashboard → Storage → Create Database → Neon Postgres → Connect to Project → Prefix: DERGI
+- Bu adım bildirilince: NILEDB_*/POSTGRES_URL temizliği → redeploy → setup-db {seed:true} → canlı tarama E2E
