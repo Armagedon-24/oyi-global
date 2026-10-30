@@ -372,3 +372,19 @@ Stage Summary:
 - Token'ın yetkili olduğu her şey otomatikleştirildi: env'ler + production deploy tamam; yeni kod canlıda ve doğru çalışıyor
 - Kalan TEK engel: geçerli bir Postgres. Token storage yetkisi olmadığından DB oluşturulamıyor → kullanıcıdan 2 dk'lık dashboard adımı (Storage → Create Database → Neon Postgres → Connect to oyi-global) veya bozuk NILEDB kimliklerinin düzeltilmesi
 - Kullanıcı "oldu" dedikten sonra: vercel redeploy → POST /api/admin/setup-db {seed:true} (398 bulgu arşivi) → scan start/step/complete E2E → dergi + tarama tam canlı
+
+---
+Task ID: 18
+Agent: main-agent (Z.ai)
+Task: GitHub reposuna kod push'u (Armagedon-24/oyi-global) + push öncesi güvenlik temizliği
+
+Work Log:
+- PUSH ÖNCESİ KRİTİK GÜVENLİK DÜZELTMESİ: .env (ADMIN_PASSWORD içerir) git index'inde TAKİP EDİLİYORDU (342 dosya) — public repoya push sızıntı olurdu. git rm --cached .env + .gitignore'a /prisma/pg-client-gen/ (38MB), /tool-results/, /download/, /upload/ eklendi → 187 dosya / 12MB temiz set; commit "güvenlik: .env ve oluşturma çıktıları repodan çıkarıldı".
+- TOKEN SERÜVENİ: (1) ilk klasik token yalnız admin:enterprise kapsamlı → push 403 (repo kapsamı yok); (2) fine-grained token geçersiz çıktı — kullanıcının "...rAiLx" ile biten token'ının sonuna "yeni" kelimesi boşluksuz yapışmış; (3) doğru token ile API doğrulama OK (Armagedon-24) → push BAŞARILI.
+- PUSH: https://github.com/Armagedon-24/oyi-global.git main branch oluşturuldu; yerel HEAD 485baa8 == remote main HEAD (ls-remote ile doğrulandı). Token hiçbir dosyaya kaydedilmedi (inline credential.helper ile tek seferlik kullanım).
+- Vercel Dergi (Nile) bağlantısı hâlâ tamamlanmamış (env listesinde yeni önek yok) — kullanıcıya DERGI + Connect adımı hatırlatıldı.
+
+Stage Summary:
+- Kod artık GitHub'da: herkese açık repo, sıfır sır (ADMIN_PASSWORD/.env, ZAI config, Vercel token repo dışında)
+- Canlının ve reponun kodu birebir aynı (485baa8) → ileride Vercel GitHub entegrasyonu bağlanırsa otomatik deploy güvenle açılabilir
+- Tek bekleyen kullanıcı adımı: Vercel Storage'da Dergi entegrasyonunu (prefix DERGI) Connect etmek
