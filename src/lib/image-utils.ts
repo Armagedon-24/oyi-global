@@ -26,8 +26,10 @@ export function parseFindingImages(
 }
 
 /** Sıcak bağlantı (hotlink) ve mixed-content sorunlarını aşmak için proxy üzerinden göster.
- *  Yerel yollar (public/uploads altındaki editör görselleri) doğrudan sunulur. */
+ *  Yerel yollar (public/uploads altındaki editör görselleri) ve base64 data URL'leri
+ *  (Vercel uyumlu editör görselleri) doğrudan, proxy'siz sunulur. */
 export function imgProxyUrl(url: string): string {
   if (url.startsWith("/")) return url;
+  if (url.startsWith("data:")) return url;
   return `/api/image-proxy?url=${encodeURIComponent(url)}`;
 }

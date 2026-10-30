@@ -1,19 +1,21 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
+import sharp from "sharp";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 /**
  * POST /api/admin/upload  (multipart/form-data, field: file)
- * Editörün haber eklerken yüklediği görselleri public/uploads altına kaydeder.
- * Dönen adres ("/uploads/<dosya>") Finding.images JSON'una yazılır;
- * imgProxyUrl yerel yolları proxy'siz doğrudan sunar.
+ * Editörün haber eklerken yüklediği görselleri sharp ile sıkıştırıp
+ * base64 data URL olarak döndürür. Dosya sistemi KULLANILMAZ; böylece
+ * okunabilir-disk olmayan (read-only) ortamlarda — Vercel, Netlify vb. —
+ * de sorunsuz çalışır. Dönen data URL, Finding.images JSON'una yazılır;
+ * imgProxyUrl data: adreslerini proxy'siz doğrudan sunar.
  */
 
-const MAX_BYTES = 6 * 1024 * 1024; // 6 MB
+const MAX_BYTES = 4 * 1024 * 1024; // 4 MB (Vercel istek gövdesi limiti güvenliği)
 
 const MIME_EXT: Record<string, string> = {
   "image/jpeg": ".jpg",
@@ -62,14 +64,13 @@ export async function POST(req: Request) {
     }
     if (file.size > MAX_BYTES) {
       return NextResponse.json(
-        { success: false, error: "Görsel çok büyük (en fazla 6 MB)." },
+        { success: false, error: "Görsel çok büyük (en fazla 4 MB)." },
         { status: 413 }
       );
     }
 
     const mime = (file.type || "").toLowerCase().split(";")[0].trim();
-    const ext = MIME_EXT[mime];
-    if (!ext) {
+    if (!MIME_EXT[mime]) {
       return NextResponse.json(
         { success: false, error: "Desteklenmeyen tür. JPG, PNG, WEBP, GIF veya AVIF yükleyin." },
         { status: 415 }
@@ -84,17 +85,26 @@ export async function POST(req: Request) {
       );
     }
 
-    const dir = path.join(process.cwd(), "public", "uploads");
-    await fs.mkdir(dir, { recursive: true });
+    // Sıkıştır: uzun kenar 1600 px, JPEG %80 — tipik sonuç 150-400 KB
+    const compressed = await sharp(Buffer.from(buf))
+      .rotate()
+      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 80, mozjpeg: true })
+      .toBuffer();
 
-    const name = `haber-${crypto.randomUUID().slice(0, 12)}${ext}`;
-    await fs.writeFile(path.join(dir, name), buf);
+    const url = `data:image/jpeg;base64,${compressed.toString("base64")}`;
+    const name = `haber-${crypto.randomUUID().slice(0, 12)}.jpg`;
 
-    return NextResponse.json({ success: true, url: `/uploads/${name}` });
+    return NextResponse.json({
+      success: true,
+      url,
+      name,
+      bytes: compressed.length,
+    });
   } catch (error) {
     console.error("[admin/upload]", error);
     return NextResponse.json(
-      { success: false, error: "Görsel yüklenemedi." },
+      { success: false, error: "Görsel işlenemedi." },
       { status: 500 }
     );
   }

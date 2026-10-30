@@ -250,10 +250,16 @@ export default function AdminPage() {
         title: "Küresel tarama tamamlandı",
         description: `${langs.length} dil tarandı, ${addedTotal} yeni bulgu Türkçeleştirilerek dergiye eklendi.`,
       });
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error && err.message ? err.message : "";
+      const sessionIssue = /şifre|oturum|401/i.test(msg);
       toast({
         title: "Tarama başlatılamadı",
-        description: "Oturum süresi dolmuş olabilir; tekrar giriş yapmayı deneyin.",
+        description: sessionIssue
+          ? "Oturum süresi dolmuş olabilir; tekrar giriş yapmayı deneyin."
+          : msg
+            ? msg
+            : "Sunucuya ulaşılamadı. Bağlantıyı ve sunucu günlüklerini kontrol edin.",
         variant: "destructive",
       });
     } finally {
@@ -313,7 +319,7 @@ export default function AdminPage() {
             ? prev
             : [...prev, { url: data.url, alt: "", preview: data.url }]
         );
-        toast({ title: "Görsel yüklendi", description: data.url });
+        toast({ title: "Görsel yüklendi", description: "Galeriye eklendi — ilk görsel haberin kapağı olur." });
       } else {
         toast({ title: "Görsel yüklenemedi", description: data.error, variant: "destructive" });
       }

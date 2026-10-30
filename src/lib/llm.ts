@@ -6,12 +6,43 @@ import ZAI from "z-ai-web-dev-sdk";
 import { CATEGORY_KEYS, categoryLabel, type ScanLanguage } from "./forensics-config";
 
 let zaiInstance: ZAI | null = null;
+let zaiInitPromise: Promise<ZAI> | null = null;
 
+/**
+ * ZAI istemcisini döndürür.
+ * Öncelik sırası:
+ *  1) ZAI_BASE_URL + ZAI_API_KEY ortam değişkenleri (Vercel/Netlify vb. bulut
+ *     dağıtımlarında .z-ai-config dosyası bulunamadığı için gereklidir),
+ *  2) standart .z-ai-config dosyası (yerel geliştirme ortamı).
+ */
 export async function getZAI(): Promise<ZAI> {
-  if (!zaiInstance) {
-    zaiInstance = await ZAI.create();
+  if (zaiInstance) return zaiInstance;
+  if (!zaiInitPromise) {
+    zaiInitPromise = (async () => {
+      const baseUrl = process.env.ZAI_BASE_URL?.trim();
+      const apiKey = process.env.ZAI_API_KEY?.trim();
+      if (baseUrl && apiKey) {
+        // SDK kurucusu tip tanımında private olarak işaretlidir; ortam
+        // değişkenleriyle doğrudan yapılandırma için güvenli tip geçişi gerekir.
+        const Ctor = ZAI as unknown as new (config: Record<string, string>) => ZAI;
+        zaiInstance = new Ctor({
+          baseUrl,
+          apiKey,
+          chatId: process.env.ZAI_CHAT_ID?.trim() ?? "",
+          userId: process.env.ZAI_USER_ID?.trim() ?? "",
+          token: process.env.ZAI_TOKEN?.trim() ?? "",
+        });
+        return zaiInstance;
+      }
+      zaiInstance = await ZAI.create();
+      return zaiInstance;
+    })();
+    zaiInitPromise.catch(() => {
+      // Başarısız init sonrası tekrar denemeye izin ver
+      zaiInitPromise = null;
+    });
   }
-  return zaiInstance;
+  return zaiInitPromise;
 }
 
 export interface RawSearchItem {
@@ -22,7 +53,11 @@ export interface RawSearchItem {
   date: string;
 }
 
-/** Bir sorgu için web araması yapar; hata olursa boş liste döner */
+/**
+ * Bir sorgu için web araması yapar; hata olursa boş liste döner.
+ * Önce Z-AI web_search denenir; kullanılamıyorsa (yapılandırma eksik,
+ * ağ erişimi yok — ör. Vercel) DuckDuckGo HTML aramasına düşülür.
+ */
 export async function searchWeb(query: string, num = 10, recencyDays = 365): Promise<RawSearchItem[]> {
   try {
     const zai = await getZAI();
@@ -31,9 +66,83 @@ export async function searchWeb(query: string, num = 10, recencyDays = 365): Pro
       num,
       recency_days: recencyDays,
     })) as RawSearchItem[];
-    return Array.isArray(results) ? results : [];
+    if (Array.isArray(results) && results.length > 0) return results;
   } catch (err) {
-    console.error(`[searchWeb] Arama hatası (${query}):`, err);
+    console.error(`[searchWeb] Z-AI araması başarısız (${query}), DuckDuckGo yedeğine düşülüyor:`, err);
+  }
+  return searchWebDuckDuckGo(query, num);
+}
+
+const DDG_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+
+/**
+ * DuckDuckGo HTML araması (API anahtarı gerektirmez). Z-AI web_search
+ * kullanılamadığında yedek arama motoru olarak çalışır.
+ */
+export async function searchWebDuckDuckGo(query: string, num = 10): Promise<RawSearchItem[]> {
+  try {
+    const res = await fetch(
+      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+      {
+        headers: {
+          "User-Agent": DDG_UA,
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "tr,en;q=0.8",
+        },
+        signal: AbortSignal.timeout(15000),
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return [];
+    const html = await res.text();
+
+    const anchorRe = /<a\s([^>]*class="[^"]*result__a[^"]*"[^>]*)>([\s\S]*?)<\/a>/g;
+    const snippetRe = /<a\s([^>]*class="[^"]*result__snippet[^"]*"[^>]*)>([\s\S]*?)<\/a>/g;
+
+    const snippets: string[] = [];
+    let sm: RegExpExecArray | null;
+    while ((sm = snippetRe.exec(html)) !== null) {
+      snippets.push(tagText(sm[2]).slice(0, 600));
+    }
+
+    const items: RawSearchItem[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = anchorRe.exec(html)) !== null && items.length < num) {
+      const hrefMatch = m[1].match(/href="([^"]+)"/);
+      if (!hrefMatch) continue;
+      let href = hrefMatch[1].replace(/&amp;/g, "&");
+      if (href.startsWith("//")) href = `https:${href}`;
+      if (/duckduckgo\.com\/l\//i.test(href)) {
+        try {
+          const real = new URL(href).searchParams.get("uddg");
+          if (!real) continue;
+          href = real;
+        } catch {
+          continue;
+        }
+      }
+      if (!/^https?:\/\//i.test(href)) continue;
+      if (/duckduckgo\.com\/y\.js/i.test(href)) continue; // reklam bağlantısı
+      const title = tagText(m[2]);
+      if (!title || title.length < 3) continue;
+      let host = "";
+      try {
+        host = new URL(href).hostname;
+      } catch {
+        continue;
+      }
+      items.push({
+        url: href,
+        name: title,
+        snippet: snippets[items.length] ?? "",
+        host_name: host,
+        date: "",
+      });
+    }
+    return items;
+  } catch (err) {
+    console.error(`[searchWebDuckDuckGo] Arama hatası (${query}):`, err);
     return [];
   }
 }

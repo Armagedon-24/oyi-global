@@ -42,8 +42,18 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("[scan/start]", error);
+    const msg = String((error as { message?: string })?.message ?? "");
+    const dbIssue =
+      /DATABASE_URL|Can't reach database|Unable to open|does not exist|Protocol|P1001|P1003|P2021|P2022/i.test(
+        msg
+      );
     return NextResponse.json(
-      { success: false, error: "Tarama oturumu başlatılamadı" },
+      {
+        success: false,
+        error: dbIssue
+          ? "Veritabanı bağlantısı kurulamadı (DATABASE_URL kontrol edin — Vercel'de Postgres gerekir)."
+          : "Tarama oturumu başlatılamadı",
+      },
       { status: 500 }
     );
   }

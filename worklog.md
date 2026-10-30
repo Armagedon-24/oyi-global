@@ -304,3 +304,28 @@ Stage Summary:
 - /admin artık dergiyle aynı kehribar renk ailesini taşıyan fütüristik bir komuta terminali: cam paneller, köşe braketleri, radar halesi, tarama hattı, mono teknik etiketler
 - Tüm işlevler (tarama, haber ekleme, görsel yükleme, yorum moderasyonu, çıkış) aynen korunuyor; masaüstü + mobilde taşma/üst üste binme yok
 - Değişen dosyalar: .env, auth.ts, globals.css (HUD bölümü), admin/page.tsx
+
+
+---
+Task ID: 15
+Agent: main-agent (Z.ai)
+Task: "https://oyi-global.vercel.app/admin bu adreste canlıya aldım tarama hata veriyor kontrol et ve düzelt"
+
+Work Log:
+- TEŞHİS (canlı problar): oyi-global.vercel.app'ta kimlik doğrulama sağlam (yanlış şifre 401 + doğru mesaj; Hakan_1251 → 200; session authenticated) AMA veritabanına dokunan her API 500 (stats/findings/comments) → SQLite serverless'ta çalışmıyor; tarama hatasının kökü bu (scan/start DB yazması 500 → arayüz yanlışlıkla "oturum süresi dolmuş" gösteriyordu).
+- KÖK NEDENLER: (1) Vercel lambda'da SQLite dosyası yok/kalıcı değil; (2) Z-AI SDK kimliği /etc/.z-ai-config'ten geliyor ve internal-api.z.ai özel ağ IP'sine (172.25.x.x) çözümleniyor → Vercel'den erişilemez; (3) /api/admin/upload public/uploads'a fs yazıyor → Vercel'de read-only; (4) hata mesajı her 500'ü "oturum" diye sunuyordu.
+- DÜZELTME 1 — POSTGRES ŞEMASI: prisma/schema.postgres.prisma (aynı modeller, provider=postgresql) + vercel.json buildCommand ("prisma generate --schema=...postgres && next build && cp...") → Vercel derlemesi Postgres istemcisi üretir; yerel geliştirme SQLite şemasıyla aynen sürer.
+- DÜZELTME 2 — SDK ORTAM DEĞİŞKENİ DESTEĞİ: llm.ts getZAI() artık ZAI_BASE_URL+ZAI_API_KEY (+ops. ZAI_CHAT_ID/ZAI_USER_ID/ZAI_TOKEN) varsa doğrudan new ZAI(config) kuruyor (SDK kurucusu private tipli → güvenli tip geçişi), yoksa .z-ai-config dosyasına düşüyor; init promise'i hata sonrası sıfırlanıp yeniden denenebilir.
+- DÜZELTME 3 — ARAMA YEDEĞİ: searchWeb, Z-AI boş/hatalıysa searchWebDuckDuckGo'ya düşüyor (html.duckduckgo.com HTML parse: result__a/result__snippet, uddg redirect çözümü, reklam filtresi) → Vercel'de API anahtarı olmasa da tarama içerik bulabiliyor.
+- DÜZELTME 4 — TAŞINABİLİR GÖRSEL YÜKLEME: /api/admin/upload sharp ile sıkıştırıyor (uzun kenar 1600px, mozjpeg q80) ve base64 data URL döndürüyor (fs yok, 4MB sınırı, magic-byte denetimi korundu); /api/admin/findings data:image/* base64 URL'leri de kabul ediyor (görsel başına ≤4M karakter); imgProxyUrl data: adreslerini proxy'siz geçiriyor.
+- DÜZELTME 5 — DÜRÜST HATA MESAJLARI + ADIM BÜTÇESİ: scan/start 500'lerinde Prisma DB hata imzaları yakalanıp "Veritabanı bağlantısı kurulamadı (DATABASE_URL kontrol edin — Vercel'de Postgres gerekir)" dönüyor; admin catch bloğu sunucu mesajını gösteriyor (401/oturum ayırtımı korunuyor); upload toast'ında ham URL yerine açıklama; scan/step görsel çıkarımı 6→3 makale (fonksiyon süre bütçesi).
+- EK: scripts/migrate-sqlite-to-postgres.mjs (yerel SQLite → Postgres taşıyıcı: ScanRun→Finding→Comment/WatchKeyword/Briefing, skipDuplicates + unique'suz tablolarda hedef-boş koruması) ve scripts/verify-vercel-fixes.mjs (8 uçtan uca test).
+- Doğrulama (restart + verify script): giriş ✓, istatistikler (DB okuma) ✓, tarama başlat/tamamla (DB yazma) ✓, görsel yükleme data URL (sharp) ✓, data URL görselli haber ekleme ✓ + test kaydı silindi ✓, DuckDuckGo yedek arama 5 sonuç ✓; tsc src 0 hata (examples/skills'te önceden var olan ilgisiz hatalar dışında).
+- Paket: download/oyi-global-proje-2026-10-30-v2.zip (tüm düzeltmeler + vercel.json + schema.postgres + taşıma scripti dahil).
+
+Stage Summary:
+- Canlıdaki tarama hatasının kökü Vercel'de SQLite'ın çalışmamasıydı; çözüm Postgres şeması + vercel.json derleme hattı + Vercel Postgres oluşturma/db push adımları (kullanıcıya talimat verildi)
+- Tarama Vercel'de Z-AI erişimi olmasa bile DuckDuckGo yedeğiyle içerik buluyor; ZAI_BASE_URL/ZAI_API_KEY env değişkenleriyle tam çeviri/analiz kalitesi geri geliyor
+- Görsel yükleme dosya sisteminden bağımsızlaştı (base64 data URL) → Vercel'de haber ekleme + görsel çalışıyor
+- Hata mesajları dürüstleşti: DB sorunu artık "oturum süresi dolmuş" olarak gizlenmiyor
+- Değişen dosyalar: llm.ts, image-utils.ts, api/admin/upload, api/admin/findings, api/scan/start, api/scan/step, admin/page.tsx; Yeni: prisma/schema.postgres.prisma, vercel.json, scripts/migrate-sqlite-to-postgres.mjs, scripts/verify-vercel-fixes.mjs

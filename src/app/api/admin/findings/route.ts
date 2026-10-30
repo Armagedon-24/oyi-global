@@ -56,14 +56,24 @@ export async function POST(req: Request) {
       );
     }
 
-    // Görseller: yalnızca yerel /uploads yolları kabul edilir (elle eklenen haberlerde)
+    // Görseller: yerel /uploads yolları VEYA base64 data URL'leri (Vercel uyumlu)
+    const DATA_URL_RE =
+      /^data:image\/(jpeg|jpg|png|webp|gif|avif);base64,[A-Za-z0-9+/=]+$/;
     const images: { url: string; alt: string }[] = Array.isArray(body.images)
       ? (body.images as IncomingImage[])
           .map((im) => ({
             url: typeof im?.url === "string" ? im.url.trim() : "",
             alt: typeof im?.alt === "string" ? im.alt.trim().slice(0, 200) : "",
           }))
-          .filter((im) => im.url.startsWith("/uploads/") && !im.url.includes(".."))
+          .filter((im) => {
+            if (im.url.startsWith("/uploads/") && !im.url.includes("..")) {
+              return im.url.length < 500;
+            }
+            if (DATA_URL_RE.test(im.url)) {
+              return im.url.length <= 4_000_000; // görsel başına ~3 MB sınırı
+            }
+            return false;
+          })
           .slice(0, 8)
       : [];
 

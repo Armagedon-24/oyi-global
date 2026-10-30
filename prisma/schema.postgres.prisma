@@ -1,0 +1,83 @@
+// OYİ GLOBAL — Postgres (Vercel/Neon) şema varyantı.
+// Yerel geliştirmede prisma/schema.prisma (SQLite) kullanılır;
+// Vercel dağıtımında bu şema ile istemci üretilir (bkz. vercel.json).
+// Tabloları oluşturmak için:
+//   DATABASE_URL="postgres://..." bunx prisma db push --schema prisma/schema.postgres.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ScanRun {
+  id               String    @id @default(cuid())
+  scope            String    @default("all")
+  focusCategory    String?
+  status           String    @default("running")
+  totalFound       Int       @default(0)
+  newItems         Int       @default(0)
+  languagesCovered Int       @default(0)
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  findings         Finding[]
+}
+
+model WatchKeyword {
+  id        String   @id @default(cuid())
+  term      String   @unique
+  createdAt DateTime @default(now())
+}
+
+model Finding {
+  id              String    @id @default(cuid())
+  scanId          String?
+  url             String    @unique
+  originalTitle   String
+  originalSnippet String    @default("")
+  trTitle         String
+  trSummary       String    @default("")
+  language        String
+  sourceName      String    @default("")
+  category        String    @default("genel")
+  importance      Int       @default(3)
+  isNewTech       Boolean   @default(false)
+  keywords        String    @default("")
+  publishedDate   String?
+  images          String    @default("[]")
+  deepAnalysis    String?
+  fullArticle     String?
+  bookmarked      Boolean   @default(false)
+  isRead          Boolean   @default(false)
+  notes           String?
+  createdAt       DateTime  @default(now())
+  scan            ScanRun?  @relation(fields: [scanId], references: [id], onDelete: SetNull)
+  comments        Comment[]
+
+  @@index([category])
+  @@index([language])
+  @@index([createdAt])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  findingId String
+  author    String   @default("Anonim Okur")
+  body      String
+  ip        String   @default("")
+  createdAt DateTime @default(now())
+  finding   Finding  @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@index([findingId])
+  @@index([createdAt])
+}
+
+model Briefing {
+  id        String   @id @default(cuid())
+  content   String
+  itemCount Int      @default(0)
+  createdAt DateTime @default(now())
+}

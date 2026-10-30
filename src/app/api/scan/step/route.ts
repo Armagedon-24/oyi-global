@@ -130,10 +130,11 @@ export async function POST(req: Request) {
 
     // 9) Kaydedilen bulgular için makale görsellerini çıkar (fotoğraf/şekil/çizim)
     //    Paralel çalışır; başarısızlık adımı bozmaz — "none" işaretlenip
-    //    /api/enrich-images ile sonra kurtarılabilir.
+    //    /api/enrich-images ile sonra kurtarılabilir. Adım süresini korumak
+    //    için (Vercel fonksiyon limitleri) en fazla 3 makale işlenir.
     if (savedFindings.length > 0) {
       await Promise.allSettled(
-        savedFindings.slice(0, 6).map(async (f) => {
+        savedFindings.slice(0, 3).map(async (f) => {
           try {
             const imgs = await extractImagesFromArticle(f.url, 8);
             await db.finding.update({
