@@ -483,14 +483,14 @@ export default function Home() {
           </div>
 
           {/* Görünüm değiştirici: Dergi / Kart / Zaman Çizelgesi */}
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-slate-400">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-400 shrink-0">
               {findings.length > 0 && `${findings.length} bulgu görüntüleniyor`}
             </p>
-            <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+            <div className="flex max-w-full overflow-x-auto no-scrollbar rounded-lg border border-slate-700 bg-slate-900 p-0.5">
               <button
                 onClick={() => setView("dergi")}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
+                className={`flex shrink-0 items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
                   view === "dergi"
                     ? "bg-amber-500 text-slate-950 font-semibold"
                     : "text-slate-400 hover:text-slate-200"
@@ -500,7 +500,7 @@ export default function Home() {
               </button>
               <button
                 onClick={() => setView("kart")}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
+                className={`flex shrink-0 items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
                   view === "kart"
                     ? "bg-amber-500 text-slate-950 font-semibold"
                     : "text-slate-400 hover:text-slate-200"
@@ -510,7 +510,7 @@ export default function Home() {
               </button>
               <button
                 onClick={() => setView("zaman")}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
+                className={`flex shrink-0 items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
                   view === "zaman"
                     ? "bg-amber-500 text-slate-950 font-semibold"
                     : "text-slate-400 hover:text-slate-200"

@@ -25,7 +25,9 @@ export function parseFindingImages(
   }
 }
 
-/** Sıcak bağlantı (hotlink) ve mixed-content sorunlarını aşmak için proxy üzerinden göster */
+/** Sıcak bağlantı (hotlink) ve mixed-content sorunlarını aşmak için proxy üzerinden göster.
+ *  Yerel yollar (public/uploads altındaki editör görselleri) doğrudan sunulur. */
 export function imgProxyUrl(url: string): string {
+  if (url.startsWith("/")) return url;
   return `/api/image-proxy?url=${encodeURIComponent(url)}`;
 }

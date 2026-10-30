@@ -265,3 +265,23 @@ Work Log:
 Stage Summary:
 - Task 10 ve Task 11 önceki oturumda tamamlanmıştı; bu oturumda sunucu ayağa kaldırılıp tüm akışlar API + UI seviyesinde yeniden doğrulandı — hepsi çalışıyor
 - Küçük notlar: yorum gövdesi input (textarea değil); admin panel kapsam seçimi buton grubu (select değil); ADMIN_PASSWORD .env'de (oyi2026), değişirse sunucu yeniden başlatılmalı
+
+---
+Task ID: 13
+Agent: main-agent (Z.ai)
+Task: "adminde sayfaya haber ekleyebilsin, haber ile birlikte görsel girebilsin, tam mobil uyumlu olsun (ekrandan taşma / üst üste binme yok)"
+
+Work Log:
+- GÖRSEL YÜKLEME API'Sİ (/api/admin/upload, yeni): multipart form-data → public/uploads/haber-<uuid>.<ext>; tür denetimi MIME + magic bytes (JPEG/PNG/WEBP/GIF/AVIF), 6 MB sınırı; requireAdmin korumalı (çerezsiz→401). Yerel yollar imgProxyUrl'den artık proxy'siz geçiyor (url.startsWith("/") → doğrudan) — dergi kapağı, makale görseli, Tam Oku galerisi ve kart görselleri hep birlikte kapsandı.
+- HABER OLUŞTURMA API'Sİ (/api/admin/findings POST, yeni): başlık 4-300, metin 20-30.000 karakter doğrulaması; kategori CATEGORIES doğrulaması (geçersiz→genel); görseller yalnızca /uploads/ altından (path traversal filtreli, en fazla 8); url=manual://oyi-<uuid>, language=tr, kaynak adı varsayılan "OYİ GLOBAL Editörü"; fullArticle JSON'u (title/paragraphs/wordCount/translated/manual) önceden üretiliyor → Tam Oku penceresi tam metni ANINDA gösteriyor (ağ yok).
+- ADMIN UI "YENİ HABER EKLE" FORMU: başlık + gövde (karakter sayacı, paragraf boşlukları korunur) + kategori/önem/kaynak seçimi + "Yeni teknoloji" işareti; gizli file input + büyük bırakma alanı ("İlk görsel haberin kapak resmi olur"); yüklenen görseller önizleme kartında (KAPAK/numara rozeti, kaldırma, görsel başına alt metni alanı); doğrulama dolana kadar buton disabled; başarılı yayın → toast + form sıfırlama + Son Bulgular/istatistik tazeleme.
+- MOBİL DÜZELTMELER: /admin'de Radix ScrollArea'nın display:table ölçüm div'i grid öğesini 566px'e zorluyordu (sw=582>390) — üç liste (Tarama Günlüğü, Son Bulgular, Yorum Moderasyonu) düz overflow-y-auto'ya çevrildi + Card'lara min-w-0 + yeni .admin-scroll koyu ince kaydırma çubuğu (globals.css); ana sayfada 360px'te Görünüm değiştirici (Dergi/Kart/Zaman Çizelgesi) taşması — satır flex-wrap + butonlara shrink-0 + gruba max-w-full overflow-x-auto no-scrollbar.
+- Doğrulama (curl + agent-browser): çerezsiz upload→401, çerezli upload→/uploads/haber-*.jpg (200 image/jpeg); çerezsiz haber POST→401, kısa başlık→400, geçerli haber→dergi kapağında manşet+görsel, TOC 1. satır, makale sayfası (görsel + kaynak satırı), Tam Oku "Tam Metin · 43 kelime" anında + 2 görselli galeri + paragraf yapısı; MOBİL UI'dan canvas üretimli görsel DataTransfer ile yüklendi → KAPAK rozetli önizleme → form gönderildi → toast "Haber dergiye eklendi" + istatistik 399 → dergide kapak/görsel/Tam Oku teyit → test kaydı silindi, uploads temizlendi.
+- Mobil denetim sonuçları (taşma tarayıcı eval'i): 390px / ve /admin sw=390 ✓; 360px sw=360 ✓ (değiştirici grubu 299px tam görünür); 320px (en dar) /, /admin, dergi makale (frame 280px), Tam Oku (301px) hepsinde sw=vw ✓; /report /briefing /assistant /analytics zaten temiz; üst üste binme yok; konsol hatası yok; tsc src temiz.
+- Ekran görüntüleri: download/oyi-global-kontrol/16-23 PNG (dergi kapak, Tam Oku, mobil admin form + toast, 360/320px denetimleri, desktop form).
+
+Stage Summary:
+- Editör artık /admin'den elle haber yayınlıyor: metin + kategori + önem + birden çok görsel (ilk görsel kapak); haber dergiye anında düşüyor, Tam Oku tam metni ve görsel galerisini gösteriyor
+- Yükleme /api/admin/upload ile magic-byte denetimli, yerel /uploads yolları tüm görsel yüzeylerinde proxy'siz sunuluyor
+- Mobil tam uyum: 320/360/390px'te hiçbir sayfada yatay taşma veya üst üste binme kalmadı (ScrollArea → düz scroll + min-w-0 + flex-wrap düzeltmeleri)
+- Değişen dosyalar: api/admin/upload (yeni), api/admin/findings (yeni), admin/page.tsx, image-utils.ts, globals.css (.admin-scroll), page.tsx (görünüm değiştirici)

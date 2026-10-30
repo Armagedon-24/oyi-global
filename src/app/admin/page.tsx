@@ -7,14 +7,14 @@
  * yalnızca bu panel üzerinden yapılabilir.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -29,17 +29,21 @@ import {
   Database,
   ExternalLink,
   Globe2,
+  ImagePlus,
   Languages,
   Loader2,
   Lock,
   LogOut,
   MessageSquare,
+  Newspaper,
   Radar,
   Radar as RadarIcon,
   ScanSearch,
+  Send,
   ShieldCheck,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { CATEGORIES, SCAN_LANGUAGES } from "@/lib/forensics-config";
 import { OyiMark } from "@/components/forensics/oyi-logo";
@@ -56,6 +60,12 @@ interface AdminComment {
 
 type AuthState = "checking" | "guest" | "admin";
 
+interface NewsImage {
+  url: string;
+  alt: string;
+  preview: string;
+}
+
 export default function AdminPage() {
   const { toast } = useToast();
 
@@ -70,6 +80,18 @@ export default function AdminPage() {
   const [commentTotal, setCommentTotal] = useState(0);
   const [deletingFindingId, setDeletingFindingId] = useState<string | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+
+  // ---- Yeni haber formu ----
+  const [newsTitle, setNewsTitle] = useState("");
+  const [newsBody, setNewsBody] = useState("");
+  const [newsCategory, setNewsCategory] = useState("genel");
+  const [newsSource, setNewsSource] = useState("");
+  const [newsImportance, setNewsImportance] = useState("4");
+  const [newsNewTech, setNewsNewTech] = useState(false);
+  const [newsImages, setNewsImages] = useState<NewsImage[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [savingNews, setSavingNews] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ---- Tarama durumu ----
   const [scanning, setScanning] = useState(false);
@@ -275,6 +297,84 @@ export default function AdminPage() {
       toast({ title: "Silinemedi", description: "Bağlantı hatası.", variant: "destructive" });
     } finally {
       setDeletingCommentId(null);
+    }
+  };
+
+  // ---- Yeni haber: görsel yükleme + kaydetme ----
+  const uploadImage = async (file: File) => {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.success && data.url) {
+        setNewsImages((prev) =>
+          prev.length >= 8
+            ? prev
+            : [...prev, { url: data.url, alt: "", preview: data.url }]
+        );
+        toast({ title: "Görsel yüklendi", description: data.url });
+      } else {
+        toast({ title: "Görsel yüklenemedi", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Görsel yüklenemedi", description: "Bağlantı hatası.", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const onImagePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) uploadImage(file);
+  };
+
+  const resetNewsForm = () => {
+    setNewsTitle("");
+    setNewsBody("");
+    setNewsCategory("genel");
+    setNewsSource("");
+    setNewsImportance("4");
+    setNewsNewTech(false);
+    setNewsImages([]);
+  };
+
+  const submitNews = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (savingNews || uploading) return;
+    setSavingNews(true);
+    try {
+      const res = await fetch("/api/admin/findings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trTitle: newsTitle,
+          trSummary: newsBody,
+          category: newsCategory,
+          sourceName: newsSource,
+          importance: Number(newsImportance) || 4,
+          isNewTech: newsNewTech,
+          images: newsImages.map((im) => ({ url: im.url, alt: im.alt })),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        resetNewsForm();
+        loadFindings();
+        loadStats();
+        toast({
+          title: "Haber dergiye eklendi",
+          description: "Yeni haber, derginin en güncel kaydı olarak okurlara sunuldu.",
+        });
+      } else {
+        toast({ title: "Haber kaydedilemedi", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Haber kaydedilemedi", description: "Bağlantı hatası.", variant: "destructive" });
+    } finally {
+      setSavingNews(false);
     }
   };
 
@@ -541,7 +641,7 @@ export default function AdminPage() {
                   <h3 className="font-semibold text-sm text-slate-200 p-4 pb-2 flex items-center gap-2">
                     <Globe2 className="h-4 w-4 text-slate-400" /> Tarama Günlüğü
                   </h3>
-                  <ScrollArea className="h-56">
+                  <div className="admin-scroll h-56 overflow-y-auto">
                     <div className="px-4 pb-4 space-y-1.5">
                       {log.map((entry) => (
                         <div
@@ -575,17 +675,210 @@ export default function AdminPage() {
                         </div>
                       ))}
                     </div>
-                  </ScrollArea>
+                  </div>
                 </CardContent>
               </Card>
             </div>
           )}
         </section>
 
-        {/* Son bulgular + yorum moderasyonu */}
-        <section className="grid gap-4 lg:grid-cols-2">
-          <Card className="border-slate-800 bg-slate-900/70">
-            <CardContent className="p-0">
+        {/* Yeni haber ekleme */}
+        <section className="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-950 p-5 sm:p-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-semibold text-slate-100">
+              <Newspaper className="h-4 w-4 text-amber-400" />
+              Yeni Haber Ekle — Elle Yayın
+            </h2>
+            <Badge className="bg-amber-500/15 text-amber-300 border-amber-500/30 gap-1 hover:bg-amber-500/15">
+              <Sparkles className="h-3 w-3" /> Dergiye doğrudan düşer
+            </Badge>
+          </div>
+          <p className="max-w-3xl text-xs leading-relaxed text-slate-400">
+            Buraya eklediğiniz haber, derginin en güncel kaydı olarak okurlara sunulur. Metni
+            paragraf boşluklarıyla ayırın; Tam Oku penceresi aynı paragraf yapısıyla gösterir.
+            Yüklediğiniz görseller haber sayfasında ve galeride yer alır.
+          </p>
+
+          <form onSubmit={submitNews} className="grid gap-4 lg:grid-cols-5">
+            {/* Sol: metin alanları */}
+            <div className="space-y-3 lg:col-span-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">Haber Başlığı *</label>
+                <Input
+                  value={newsTitle}
+                  onChange={(e) => setNewsTitle(e.target.value)}
+                  placeholder="Örn: Yeni nesil 3D tarama cihazı olay yerinde tanıtıcıya sunuldu"
+                  maxLength={300}
+                  className="bg-slate-900 border-slate-700 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">
+                  Haberin Metni *{" "}
+                  <span className="text-slate-600">
+                    ({newsBody.length.toLocaleString("tr-TR")} karakter)
+                  </span>
+                </label>
+                <Textarea
+                  value={newsBody}
+                  onChange={(e) => setNewsBody(e.target.value)}
+                  placeholder="Haber metnini buraya yazın. Paragrafları boş satırla ayırın — dergi sayfası ve Tam Oku bu yapıyı korur."
+                  rows={8}
+                  maxLength={30000}
+                  className="bg-slate-900 border-slate-700 text-sm leading-relaxed resize-y min-h-[160px]"
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-400">Kategori</label>
+                  <Select value={newsCategory} onValueChange={setNewsCategory}>
+                    <SelectTrigger className="w-full bg-slate-900 border-slate-700 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-900 border-slate-700">
+                      {CATEGORIES.map((c) => (
+                        <SelectItem key={c.key} value={c.key}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-400">Önem (1–5)</label>
+                  <Select value={newsImportance} onValueChange={setNewsImportance}>
+                    <SelectTrigger className="w-full bg-slate-900 border-slate-700 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-900 border-slate-700">
+                      {[5, 4, 3, 2, 1].map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n} — {n >= 4 ? "öne çıkan" : n === 3 ? "normal" : "arşivlik"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-400">Kaynak Adı</label>
+                  <Input
+                    value={newsSource}
+                    onChange={(e) => setNewsSource(e.target.value)}
+                    placeholder="OYİ GLOBAL Editörü"
+                    maxLength={120}
+                    className="bg-slate-900 border-slate-700 text-sm"
+                  />
+                </div>
+              </div>
+              <label className="flex w-fit cursor-pointer items-center gap-2 rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-300 select-none">
+                <input
+                  type="checkbox"
+                  checked={newsNewTech}
+                  onChange={(e) => setNewsNewTech(e.target.checked)}
+                  className="h-4 w-4 accent-amber-400"
+                />
+                <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                Yeni teknoloji olarak işaretle
+              </label>
+            </div>
+
+            {/* Sağ: görsel yükleme */}
+            <div className="space-y-3 lg:col-span-2">
+              <label className="text-xs font-medium text-slate-400">
+                Görseller{" "}
+                <span className="text-slate-600">(en fazla 8 · JPG/PNG/WEBP/GIF · 6 MB)</span>
+              </label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                onChange={onImagePicked}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading || newsImages.length >= 8}
+                className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-7 text-center transition-colors hover:border-amber-500/50 hover:bg-slate-900/60 disabled:opacity-50"
+              >
+                {uploading ? (
+                  <Loader2 className="h-5 w-5 animate-spin text-amber-400" />
+                ) : (
+                  <ImagePlus className="h-5 w-5 text-amber-400" />
+                )}
+                <span className="text-xs font-medium text-slate-300">
+                  {uploading ? "Yükleniyor…" : "Görsel seç veya buraya tıkla"}
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  İlk görsel haberin kapak resmi olur
+                </span>
+              </button>
+
+              {newsImages.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                  {newsImages.map((im, i) => (
+                    <div
+                      key={im.url}
+                      className="group relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={im.preview}
+                        alt={im.alt || `Görsel ${i + 1}`}
+                        className="h-20 w-full object-cover"
+                      />
+                      <span className="absolute left-1 top-1 rounded bg-slate-950/80 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">
+                        {i === 0 ? "KAPAK" : i + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNewsImages((prev) => prev.filter((x) => x.url !== im.url))
+                        }
+                        title="Görseli kaldır"
+                        className="absolute right-1 top-1 rounded bg-slate-950/80 p-1 text-slate-300 transition-colors hover:text-red-400"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                      <input
+                        value={im.alt}
+                        onChange={(e) =>
+                          setNewsImages((prev) =>
+                            prev.map((x) =>
+                              x.url === im.url
+                                ? { ...x, alt: e.target.value.slice(0, 200) }
+                                : x
+                            )
+                          )
+                        }
+                        placeholder="Görsel açıklaması (alt)"
+                        className="w-full border-t border-slate-800 bg-slate-950 px-2 py-1.5 text-[10px] text-slate-300 outline-none placeholder:text-slate-600"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                disabled={savingNews || uploading || newsTitle.trim().length < 4 || newsBody.trim().length < 20}
+                className="w-full h-11 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm"
+              >
+                {savingNews ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
+                Haberi Dergiye Yayınla
+              </Button>
+            </div>
+          </form>
+        </section>
+
+          {/* Son bulgular + yorum moderasyonu */}
+        <section className="grid min-w-0 gap-4 lg:grid-cols-2">
+          <Card className="min-w-0 border-slate-800 bg-slate-900/70">
+            <CardContent className="min-w-0 p-0">
               <div className="flex items-center justify-between p-4 pb-2">
                 <h3 className="font-semibold text-sm text-slate-200">Son Bulgular</h3>
                 <button
@@ -595,7 +888,7 @@ export default function AdminPage() {
                   yenile
                 </button>
               </div>
-              <ScrollArea className="h-80">
+              <div className="admin-scroll h-80 overflow-y-auto">
                 <div className="space-y-1.5 px-4 pb-4">
                   {findings.length === 0 && (
                     <p className="p-3 text-xs text-slate-500">Arşiv boş — önce bir tarama çalıştırın.</p>
@@ -636,12 +929,12 @@ export default function AdminPage() {
                     </div>
                   ))}
                 </div>
-              </ScrollArea>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="border-slate-800 bg-slate-900/70">
-            <CardContent className="p-0">
+          <Card className="min-w-0 border-slate-800 bg-slate-900/70">
+            <CardContent className="min-w-0 p-0">
               <div className="flex items-center justify-between p-4 pb-2">
                 <h3 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
                   <MessageSquare className="h-4 w-4 text-sky-400" />
@@ -655,7 +948,7 @@ export default function AdminPage() {
                   yenile
                 </button>
               </div>
-              <ScrollArea className="h-80">
+              <div className="admin-scroll h-80 overflow-y-auto">
                 <div className="space-y-1.5 px-4 pb-4">
                   {comments.length === 0 && (
                     <p className="p-3 text-xs text-slate-500">Henüz yorum yok.</p>
@@ -699,7 +992,7 @@ export default function AdminPage() {
                     </div>
                   ))}
                 </div>
-              </ScrollArea>
+              </div>
             </CardContent>
           </Card>
         </section>
