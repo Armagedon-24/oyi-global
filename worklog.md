@@ -430,3 +430,20 @@ Stage Summary:
 - Canlı: DB bağlı + 398 arşiv + tarama hattı (Bing arama → çeviri → kayıt) uçtan uca çalışıyor
 - GitHub repoyla canlı kod birebir senkron (8244272)
 - Teşhis uçları (db-debug, search-debug) admin korumalı, sır içermiyor — kalıcı olarak duruyor
+
+---
+Task ID: 21
+Agent: main-agent (Z.ai)
+Task: Görev 13 (manuel haber+görsel, tam mobil uyum) ve Görev 14 (fütüristik admin UI) doğrulama ve tamamlama
+
+Work Log:
+- DURUM TESPİTİ: Görev 13 ve 14'ün kodu önceki oturumlarda zaten yazılmıştı (ertelenmiş/onay bekliyordu): Modül 02 "Elle Yayın" formu (başlık/gövde/kategori/önem/kaynak/görsel), POST /api/admin/findings (korumalı, doğrulamalı), POST /api/admin/upload (sharp → base64 data URL, Vercel dosya sistemi gerektirmez), 4 modüllü HUD admin arayüzü (hud-* 23 CSS tanımı, scanline/corner/glow, amber terminal teması).
+- CANLI E2E (Task 13 kanıtı): test görseli (800x500 JPEG 15.6KB) → POST /api/admin/upload → sharp sıkıştırma 6.5KB data URL ✅ → görselli manuel haber POST /api/admin/findings 200 ✅ → dergide en üstte göründü, E-Dergi KAPAK HABERİ oldu ✅ → Tam Oku diyalogunda görsel data URL'i render edildi ✅ → test haberi silindi (total 400→399).
+- MOBİL UYUM DENETİMİ (agent-browser, 390x844): / →0, /admin →0, /briefing →0, /report →0, /analytics →0, /assistant →0 yatay taşma (scrollWidth-innerWidth). Filtre çip şeritleri overflow-x-auto kaydırılabilir. Kategori/önem form alanları, görsel bırakma alanı, yayınla butonu tam genişlik. Klasik dergi kapağı (SAYI 34 · EKİM 2026) mobilde düzgün.
+- TAM OKU 390px: dialog açıldı (kapak görsel butonu üzerinden), makale görseli + tam metin + rozetler taşmasız.
+- DEPLOY: değişiklik olmadığından yeni deploy gerekmedi; canlı kod (8c9614c) zaten bu özellikleri içeriyor.
+
+Stage Summary:
+- Görev 13 KAPALI: admin manuel haber+görsel yayını canlıda uçtan uca kanıtlandı; tüm sayfalar 390px'te taşmasız
+- Görev 14 KAPALI: fütüristik HUD admin arayüzü canlıda görsel olarak doğrulandı (koyu terminal teması, amber vurgular, köşe süsleri, tarama çizgisi)
+- Kalan potansiyel işler: derin analiz LLM'i Vercel'de ZAI uçları yok (HTTP çeviri yedeği çalışıyor); kullanıcıdan token revoke hatırlatması
