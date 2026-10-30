@@ -321,8 +321,14 @@ function decodeGoogleNewsLink(link: string): string {
  */
 function decodeBingNewsLink(link: string): string {
   try {
-    if (!/bing\.com\/news\/apiclick\.aspx/i.test(link)) return link;
-    const m = link.match(/[?&]url=([^&]+)/);
+    // RSS XML'i linki HTML varlıklarıyla verir (&amp;url=...) — önce çözülmeli
+    const clean = (link ?? "")
+      .replace(/&amp;/gi, "&")
+      .replace(/&#0?38;/gi, "&")
+      .replace(/&#x0?26;/gi, "&")
+      .trim();
+    if (!/bing\.com\/news\/apiclick\.aspx/i.test(clean)) return clean;
+    const m = clean.match(/[?&]url=([^&]+)/);
     if (!m) return "";
     const real = decodeURIComponent(m[1]);
     return /^https?:\/\//i.test(real) ? real : "";
@@ -365,6 +371,9 @@ export async function searchWebBingNewsRss(query: string, num = 10): Promise<Raw
       const link = decodeBingNewsLink(rawLink);
       const description = tagText(pickTag("description")).trim();
       if (!link || !/^https?:\/\//i.test(link) || title.length < 8) continue;
+      // Hâlâ Bing yönlendiricisine işaret ediyorsa (url parametresiz apiclick)
+      // gerçek hedef çözülemez — bozuk kayıt DB'ye girmesin
+      if (isUnresolvableUrl(link)) continue;
       const pubDate = pickTag("pubDate");
       let date = "";
       if (pubDate) {
@@ -404,6 +413,28 @@ export function isHomepageUrl(u: string): boolean {
 }
 
 /**
+ * URL makale adresine çözülemeyen bir yönlendirici/ara sayfa mı?
+ * (Bing apiclick parametresiz, Google News redirector vb.) — bu adreslerde
+ * makale metni bulunmaz; başlık aramasıyla gerçek adres bulunmaya çalışılır.
+ */
+export function isUnresolvableUrl(u: string): boolean {
+  if (isHomepageUrl(u)) return true;
+  try {
+    const parsed = new URL(u);
+    const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    if (/(^|\.)bing\.com$/.test(host) && /\/news\/(apiclick|search|redirect)\.aspx/i.test(parsed.pathname)) {
+      return !parsed.searchParams.get("url"); // hedef parametresi yoksa çözülemez
+    }
+    if (/news\.google\.com$/i.test(host) && /\/rss\/articles|\/articles/i.test(parsed.pathname)) {
+      return true;
+    }
+    return false;
+  } catch {
+    return true; // URL bile kurulamıyorsa okunamaz
+  }
+}
+
+/**
  * Ana sayfa URL'li kayıtlar için gerçek makale adresini bulur:
  * orijinal başlıkla alıntılı Bing News araması yapar, sonuçlardan
  * AYNI alan adındaki ve yol derinliği olan ilk makale adresini döndürür.
@@ -421,8 +452,21 @@ export async function resolveRealArticleUrl(
   } catch {
     return null;
   }
-  const results = await searchWebBingNewsRss(`"${title.slice(0, 90)}"`, 12).catch(() => []);
-  for (const r of results) {
+  // Bing News alıntılı arama + DDG yedeği (başlık anahtar kelimeleriyle)
+  const [bingResults, ddgResults] = await Promise.all([
+    searchWebBingNewsRss(`"${title.slice(0, 90)}"`, 12).catch(() => []),
+    searchWebDuckDuckGo(
+      title
+        .split(/\s+/)
+        .filter((w) => w.length > 3)
+        .slice(0, 8)
+        .join(" ") +
+        " site:" +
+        domain,
+      10
+    ).catch(() => []),
+  ]);
+  for (const r of [...bingResults, ...ddgResults]) {
     const u = decodeBingNewsLink(r.url);
     if (!u) continue;
     try {
@@ -657,7 +701,15 @@ export interface FullArticleResult {
   title: string; // Türkçe başlık (çevrildiyse)
   paragraphs: string[]; // Tam metin paragrafları (Türkçe)
   wordCount: number; // Çevrilen/okunan toplam kelime sayısı
-  engine: "direct" | "proxy" | "page_reader" | "jina" | "wayback" | "none"; // Sayfa hangi yolla okundu
+  engine:
+    | "direct"
+    | "proxy"
+    | "gtranslate"
+    | "msn"
+    | "page_reader"
+    | "jina"
+    | "wayback"
+    | "none"; // Sayfa hangi yolla okundu
   translated: boolean; // Gerçekten çeviri yapıldı mı
 }
 
@@ -719,15 +771,29 @@ function isJunkParagraph(text: string): boolean {
   if (text.length < 45 || text.split(/\s+/).length < 7) return true; // kısa satır / başlık
   if (text.length < 180 && BOILER_RE.test(text)) return true; // kalıp metni
   if ((text.match(/[|·•]/g) ?? []).length >= 3) return true; // menü ayraçları
+  if (text.includes("-->") || text.includes("<!--")) return true; // HTML yorum kalıntısı
+  // Harf oranı çok düşükse (banner/kampanya/urun widget'ı) makale metni değildir
+  const letters = (text.match(/\p{L}/gu) ?? []).length;
+  if (letters / text.length < 0.55) return true;
   return false;
 }
 
+/** HTML yorum kalıntılarını temizler — kapanmış yorumlar + sayfa sonunda kapanmamış yorum */
+function stripHtmlComments(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, " ").replace(/<!--[\s\S]*$/g, " ");
+}
+
 /** Çıkarım makale gövdesi sayılır mı? (menü/çerez kalabalığını eler) */
-function isGoodExtraction(paras: string[]): boolean {
+export function isGoodExtraction(paras: string[]): boolean {
   if (paras.length < 3) return false;
   if (paras.join(" ").length < 500) return false;
   // Paragrafların çoğu kısa satırsa (mağaza/menü/giriş sayfası) makale değildir
   return looksLikeArticleBody(paras);
+}
+
+/** Kayıtlı paragraf listesindeki çöp paragrafları ayıklar (önbellek kalite kapısı için) */
+export function filterJunkParagraphs(paras: string[]): string[] {
+  return (paras ?? []).filter((p) => typeof p === "string" && !isJunkParagraph(p));
 }
 
 /** Bot/sunucu ara sayfalarını (tarayıcı güncelleme, koruma duvarı vb.) tespit eder */
@@ -755,7 +821,7 @@ function looksLikeArticleBody(paras: string[]): boolean {
  */
 export function extractArticleParagraphs(html: string, maxChars = FULL_TEXT_LIMIT): string[] {
   if (!html) return [];
-  const cleaned = html
+  const cleaned = stripHtmlComments(html)
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
@@ -769,7 +835,8 @@ export function extractArticleParagraphs(html: string, maxChars = FULL_TEXT_LIMI
   const collect = (src: string): string[] => {
     const paras: string[] = [];
     let total = 0;
-    const pRe = /<p\s[^>]*>([\s\S]*?)<\/p\s*>/gi;
+    // Hem <p> hem <p class="..."> eşleşir (niteliksiz <p> yaygındır)
+    const pRe = /<p(?:\s[^>]*)?>([\s\S]*?)<\/p\s*>/gi;
     let m: RegExpExecArray | null;
     while ((m = pRe.exec(src)) !== null) {
       const text = tagText(m[1]);
@@ -840,6 +907,46 @@ async function fetchViaCodetabs(url: string): Promise<string> {
   return text;
 }
 
+/** corsproxy.io — üçüncü yedek ağ (bazı bölgelerde anahtarsız çalışır) */
+async function fetchViaCorsProxyIo(url: string): Promise<string> {
+  const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, {
+    headers: { "User-Agent": DDG_UA, Accept: "text/html,*/*" },
+    signal: AbortSignal.timeout(PROXY_TIMEOUT),
+    cache: "no-store",
+    redirect: "follow",
+  });
+  if (!res.ok) throw new Error(`corsproxy HTTP ${res.status}`);
+  const text = await res.text();
+  if (text.length < 800 || !/<[a-z][\s\S]*>/i.test(text)) throw new Error("corsproxy: HTML yok");
+  return text;
+}
+
+/**
+ * Google Translate sayfa vekili (translate.goog) — sayfayı GOOGLE altyapısından çeker;
+ * çoğu bot engelini aşar ve metni doğrudan TÜRKÇE getirir (çeviri adımı atlanır).
+ * Host noktaları tireye döner: www.example.com → www-example-com.translate.goog
+ */
+async function fetchViaGoogleTranslate(url: string, srcLang: string): Promise<string> {
+  const u = new URL(url);
+  const host = u.hostname.replace(/-/g, "--").replace(/\./g, "-");
+  const sl = /^[a-z]{2}$/i.test(srcLang) ? srcLang.toLowerCase() : "auto";
+  const gt = `https://${host}.translate.goog${u.pathname}${u.search}?_x_tr_sl=${sl}&_x_tr_tl=tr&_x_tr_hl=tr`;
+  const res = await fetch(gt, {
+    headers: {
+      "User-Agent": DDG_UA,
+      Accept: "text/html,application/xhtml+xml,*/*;q=0.8",
+      "Accept-Language": "tr,en;q=0.8",
+    },
+    signal: AbortSignal.timeout(14000),
+    cache: "no-store",
+    redirect: "follow",
+  });
+  if (!res.ok) throw new Error(`gtranslate HTTP ${res.status}`);
+  const text = await res.text();
+  if (text.length < 800 || !/<[a-z][\s\S]*>/i.test(text)) throw new Error("gtranslate: HTML yok");
+  return text;
+}
+
 /** Jina Reader — JS ile çizilen sayfaları düz metne çevirir (anahtarsız; IP'ye göre 401 dönebilir) */
 async function fetchViaJinaReader(url: string): Promise<string> {
   const res = await fetch(`https://r.jina.ai/${url}`, {
@@ -850,6 +957,42 @@ async function fetchViaJinaReader(url: string): Promise<string> {
   if (!res.ok) throw new Error(`jina HTTP ${res.status}`);
   const text = await res.text();
   return text.length > 600 ? text : "";
+}
+
+/** MSN toplayıcı makale adresini tanır (…/ar-AA1bC2D3) ve kimlik + dil yerelini çıkarır */
+function msnArticleId(url: string): { id: string; locale: string } | null {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)msn\.com$/i.test(u.hostname.replace(/^www\./, ""))) return null;
+    const idMatch = u.pathname.match(/\/ar-([A-Za-z0-9]+)/);
+    if (!idMatch) return null;
+    const seg = u.pathname.split("/")[1]?.toLowerCase() ?? "";
+    const locale = /^[a-z]{2}(-[a-z]{2})?$/i.test(seg) ? (seg.includes("-") ? seg : seg) : "tr-tr";
+    return { id: idMatch[1], locale };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * MSN toplayıcı sayfaları tamamen JS ile çizilir (ham HTML'de metin yoktur).
+ * MSN'in herkese açık content API'si makale gövdesini JS'siz JSON olarak verir:
+ * https://assets.msn.com/content/view/v2/Detail/{dil-yereli}/{makaleKimligi}
+ */
+async function fetchViaMsnContentApi(url: string): Promise<string> {
+  const info = msnArticleId(url);
+  if (!info) throw new Error("msn: makale kimliği yok");
+  const api = `https://assets.msn.com/content/view/v2/Detail/${info.locale}/${info.id}`;
+  const res = await fetch(api, {
+    headers: { "User-Agent": DDG_UA, Accept: "application/json,text/plain" },
+    signal: AbortSignal.timeout(12000),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`msn HTTP ${res.status}`);
+  const j: any = await res.json().catch(() => null);
+  const body: unknown = j?.body ?? j?.result?.body ?? "";
+  if (typeof body !== "string" || body.length < 300) throw new Error("msn: gövde yok");
+  return `<html><body>${body}</body></html>`;
 }
 
 /** Wayback Machine — site tamamen erişilemezse arşiv anlık görüntüsü */
@@ -896,11 +1039,15 @@ export function extractParagraphsFromPlainText(raw: string, maxChars = FULL_TEXT
 }
 
 /** Paragraf listesini parça parça Türkçeye çevirir */
-async function translateParagraphs(sourceParas: string[], language: string): Promise<string[]> {
+async function translateParagraphs(
+  sourceParas: string[],
+  language: string,
+  skipZai = false
+): Promise<string[]> {
   const chunks = splitIntoChunks(sourceParas);
   const out: string[] = [];
   for (const chunk of chunks) {
-    out.push(...(await translateChunk(chunk, language)));
+    out.push(...(await translateChunk(chunk, language, skipZai)));
   }
   return out.filter((p) => p && p.trim()).slice(0, 150);
 }
@@ -923,7 +1070,7 @@ function splitIntoChunks(paras: string[]): string[][] {
 }
 
 /** Bir parçayı (paragraf listesini) Türkçeye çevirir; paragraf sayısını korumaya çalışır */
-async function translateChunk(chunk: string[], langName: string): Promise<string[]> {
+async function translateChunk(chunk: string[], langName: string, skipZai = false): Promise<string[]> {
   const prompt = `Aşağıda ${langName} dilinde bir haber makalesinden ${chunk.length} adet paragraf var.
 Her paragrafı profesyonel, akıcı TÜRKÇE'ye çevir (adli bilimler / olay yeri inceleme alanı).
 
@@ -935,6 +1082,28 @@ KURALLAR:
 
 PARAGRAFLAR:
 ${chunk.map((p, i) => `--${i + 1}--\n${p}`).join("\n\n")}`;
+
+  /** Z-AI yoksa ücretsiz HTTP çevirisi — paralel işçi havuzuyla hızlı ve yapıyı koruyarak */
+  const httpFallback = async (): Promise<string[]> => {
+    const limited = chunk.slice(0, 60);
+    const results: string[] = new Array(limited.length).fill("");
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < limited.length) {
+        const i = cursor++;
+        const p = limited[i];
+        const t = p.length <= 2000 ? await httpTranslate(p, langName).catch(() => "") : "";
+        results[i] = t || `${p} *(çevrilemedi)*`;
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(8, limited.length) }, () => worker())
+    );
+    return results;
+  };
+
+  // Z-AI uçlarına ulaşılamayan ortamlarda (Vercel) denemesiz doğrudan HTTP çevirisi
+  if (skipZai) return httpFallback();
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -960,24 +1129,7 @@ ${chunk.map((p, i) => `--${i + 1}--\n${p}`).join("\n\n")}`;
       throw new Error(`Paragraf sayısı uyuşmadı (${parts.length}/${chunk.length})`);
     } catch (err) {
       console.error(`[translateChunk] Deneme ${attempt} başarısız:`, err);
-      if (attempt === 2) {
-        // Z-AI yoksa ücretsiz HTTP çevirisi — paralel işçi havuzuyla hızlı ve yapıyı koruyarak
-        const limited = chunk.slice(0, 60);
-        const results: string[] = new Array(limited.length).fill("");
-        let cursor = 0;
-        const worker = async () => {
-          while (cursor < limited.length) {
-            const i = cursor++;
-            const p = limited[i];
-            const t = p.length <= 2000 ? await httpTranslate(p, langName).catch(() => "") : "";
-            results[i] = t || `${p} *(çevrilemedi)*`;
-          }
-        };
-        await Promise.all(
-          Array.from({ length: Math.min(8, limited.length) }, () => worker())
-        );
-        return results;
-      }
+      if (attempt === 2) return httpFallback();
       await new Promise((r) => setTimeout(r, 1000));
     }
   }
@@ -987,8 +1139,10 @@ ${chunk.map((p, i) => `--${i + 1}--\n${p}`).join("\n\n")}`;
 /**
  * Tam Oku: makalenin TAM metnini kaynaktan okur ve Türkçeye çevirir.
  * Okuma zinciri: doğrudan indirme → Jina Reader → page_reader (yerel) →
- * ücretsiz vekiller (AllOrigins, CodeTabs) → Wayback Machine → zayıf çıkarım.
+ * ücretsiz vekiller (AllOrigins, CodeTabs, corsproxy.io) → Google Translate vekili
+ * (translate.goog — metni doğrudan Türkçe getirir) → Wayback Machine → zayıf çıkarım.
  * Her adımda kalite kapısı çalışır: menü/çerez kalabalığı makale sayılmaz.
+ * Vercel'de 60 sn fonksiyon sınırına karşı zaman bütçesi uygulanır.
  * Kaynak dil Türkçeyse çeviri atlanır.
  */
 export async function fetchAndTranslateFullArticle(
@@ -999,6 +1153,11 @@ export async function fetchAndTranslateFullArticle(
 ): Promise<FullArticleResult> {
   const isTurkish = /^tr\b/i.test(language) || /türk/i.test(language);
   const skipZai = Boolean(process.env.VERCEL); // Vercel'de Z-AI uçları yok — zaman kaybını önle
+
+  // Zaman bütçesi: Vercel fonksiyon üst sınırı 60 sn — çeviriye yer kalsın diye okuma 40 sn'de kapanır
+  const startedAt = Date.now();
+  const budgetMs = skipZai ? 40000 : 120000;
+  const leftMs = () => budgetMs - (Date.now() - startedAt);
 
   const finish = (
     paragraphs: string[],
@@ -1015,13 +1174,26 @@ export async function fetchAndTranslateFullArticle(
   /** HTML kaynağını çıkarır, gerekiyorsa çevirir; yetersizse null döner */
   const useHtml = async (
     html: string,
-    engine: FullArticleResult["engine"]
+    engine: FullArticleResult["engine"],
+    alreadyTurkish = false
   ): Promise<FullArticleResult | null> => {
     const paras = extractArticleParagraphs(html);
     if (!isGoodExtraction(paras)) return null;
-    if (isTurkish) return finish(paras, engine, false);
-    return finish(await translateParagraphs(paras, language), engine, true);
+    if (isTurkish || alreadyTurkish) return finish(paras, engine, alreadyTurkish && !isTurkish);
+    return finish(await translateParagraphs(paras, language, skipZai), engine, true);
   };
+
+  // 0) MSN toplayıcı sayfaları — ham HTML'de metin yoktur; önce JS'siz
+  //     content API'sinden tam gövdeyi oku (MSN URL'si değilse anında boşa düşer)
+  const msnHtml = await fetchViaMsnContentApi(url).catch(() => "");
+  if (msnHtml) {
+    const paras = extractArticleParagraphs(msnHtml);
+    if (isGoodExtraction(paras)) {
+      return isTurkish
+        ? finish(paras, "msn", false)
+        : finish(await translateParagraphs(paras, language, skipZai), "msn", true);
+    }
+  }
 
   // 1) Doğrudan indirme (en hızlı yol)
   let directHtml = "";
@@ -1036,18 +1208,20 @@ export async function fetchAndTranslateFullArticle(
     if (isGoodExtraction(paras)) {
       return isTurkish
         ? finish(paras, "direct", false)
-        : finish(await translateParagraphs(paras, language), "direct", true);
+        : finish(await translateParagraphs(paras, language, skipZai), "direct", true);
     }
   }
 
   // 2) Jina Reader — JS ile çizilen sayfalar (engelliyse hızlıca düşer)
-  const jinaText = await fetchViaJinaReader(url).catch(() => "");
-  if (jinaText) {
-    const paras = extractParagraphsFromPlainText(jinaText);
-    if (isGoodExtraction(paras)) {
-      return isTurkish
-        ? finish(paras, "jina", false)
-        : finish(await translateParagraphs(paras, language), "jina", true);
+  if (leftMs() > 15000) {
+    const jinaText = await fetchViaJinaReader(url).catch(() => "");
+    if (jinaText) {
+      const paras = extractParagraphsFromPlainText(jinaText);
+      if (isGoodExtraction(paras)) {
+        return isTurkish
+          ? finish(paras, "jina", false)
+          : finish(await translateParagraphs(paras, language, skipZai), "jina", true);
+      }
     }
   }
 
@@ -1070,29 +1244,45 @@ export async function fetchAndTranslateFullArticle(
   }
 
   // 4) Ücretsiz vekiller — paralel denenir, ilk geçerli HTML kazanır
-  try {
-    const winner = await Promise.any([
-      fetchViaAllOrigins(url),
-      fetchViaCodetabs(url),
-    ]);
-    const r = await useHtml(winner, "proxy");
-    if (r) return r;
-  } catch {
-    /* her iki vekil de başarısız — wayback'e geç */
-  }
-
-  // 5) Wayback Machine arşivi
-  try {
-    const wbHtml = await fetchViaWayback(url);
-    if (wbHtml) {
-      const r = await useHtml(wbHtml, "wayback");
+  if (leftMs() > 13000) {
+    try {
+      const winner = await Promise.any([
+        fetchViaAllOrigins(url),
+        fetchViaCodetabs(url),
+        fetchViaCorsProxyIo(url),
+      ]);
+      const r = await useHtml(winner, "proxy");
       if (r) return r;
+    } catch {
+      /* vekiller başarısız — translate.goog'a geç */
     }
-  } catch {
-    /* boş */
   }
 
-  // 6) Son çare: doğrudan indirmeden gelen zayıf çıkarımı kullan (hiç yoktan iyidir)
+  // 5) Google Translate vekili — Google ağından okur (engelleri aşar), metni Türkçe getirir
+  if (leftMs() > 16000) {
+    try {
+      const gtHtml = await fetchViaGoogleTranslate(url, isTurkish ? "tr" : language);
+      const r = await useHtml(gtHtml, "gtranslate", true); // metin zaten Türkçe
+      if (r) return r;
+    } catch {
+      /* wayback'e geç */
+    }
+  }
+
+  // 6) Wayback Machine arşivi
+  if (leftMs() > 22000) {
+    try {
+      const wbHtml = await fetchViaWayback(url);
+      if (wbHtml) {
+        const r = await useHtml(wbHtml, "wayback");
+        if (r) return r;
+      }
+    } catch {
+      /* boş */
+    }
+  }
+
+  // 7) Son çare: doğrudan indirmeden gelen zayıf çıkarımı kullan (hiç yoktan iyidir)
   if (directHtml.length > 800) {
     const paras = extractArticleParagraphs(directHtml);
     if (
@@ -1102,7 +1292,7 @@ export async function fetchAndTranslateFullArticle(
     ) {
       return isTurkish
         ? finish(paras, "direct", false)
-        : finish(await translateParagraphs(paras, language), "direct", true);
+        : finish(await translateParagraphs(paras, language, skipZai), "direct", true);
     }
   }
 

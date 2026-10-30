@@ -470,3 +470,30 @@ Stage Summary:
 - Gerçek makale URL'li kayıtlarda tam metin artık 6 kaynaklı yedekli zincirle geliyor; junk/menü/mağaza/engel sayfası metinleri kalite kapılarıyla özet yoluna düşüyor
 - Ana sayfa URL'li eski seed kayıtları (58%) dürüst ve hızlı "kayıt özeti" davranışına geçti; yeni taramalar gerçek makale URL'i kaydettiğinden (decodeBingNewsLink) bundan etkilenmez
 - Bilinen sınır: ana sayfa URL'li kayıtlarda gerçek makale, anahtarsız arama uçlarında bulunamıyorsa özet gösterilir (Bing web RSS çöp döndürüyor, Mojeek erişilemez — resolver Bing News ile sınırlı)
+
+---
+Task ID: 23
+Agent: main-agent (Z.ai)
+Task: "halen tam oku dediğimde tam metin kaynağından okunamadı hatası veriyor" — Tam Oku'nun ikinci tur kök neden düzeltmeleri
+
+Work Log:
+- KÖK NEDEN A (BING RSS KIRILMASI): Bing News RSS linkleri HTML varlıklarıyla geliyordu (&amp;url=...) — decodeBingNewsLink regex'i (&url=) eşleşmiyor, arama 0 madde dönüyordu; tarama VE resolveRealArticleUrl (ana sayfa çözücüsü) çökmüş durumdaydı. Düzeltme: link önce &amp;/&#38;/&#x26; çözülür sonra apiclick ayrıştırılır. Canlı tarama yeniden veri getirmeye başladı (tr: newItems 1/added 1, en: newItems 1/added 1).
+- KÖK NEDEN B (ÇIPARIM PARÇALANMASI): collect regex'i <p\s[^>]*> niteliksiz <p> etiketlerini eşlemiyordu — <p> kullanan sitelerde paragraf koleksiyonu boş dönüyor, cümle-bölme yedeği 320 kar parçalar üretiyordu (paragraf başları/metin kayboluyordu). Düzeltme: <p(?:\s[^>]*)?>.
+- KÖK NEDEN C (JUNK METİN): HTML yorum kalıntıları (kampanya + kaynak) -->) makale metnine sızıyordu ve junk önbellek (v2) süresiz sunuluyordu. Düzeltmeler: stripHtmlComments (kapalı+yarım yorum silme), isJunkParagraph'a -->/<!-- kuralı + harf oranı < 0.55 kuralı, önbellek geçerlilik kapısına isGoodExtraction(filterJunkParagraphs(...)) — çöp önbellek açılışta otomatik yenilenir.
+- YENİ MOTOR 1 — MSN CONTENT API: msn.com toplayıcı sayfaları (Bing News'te çok yaygın) tamamen JS ile çiziliyor, ham HTML'de metin yok. msnArticleId (…/ar-AA2bJANC → kimlik+dil yereli) + fetchViaMsnContentApi: assets.msn.com/content/view/v2/Detail/{locale}/{id} herkese açık JSON'u gövdeyi veriyor. Zincirin 0. adımı (en hızlı yol). Canlı: tr kayıt 11 paragraf/518 kelime/2.2 sn; en kayıt 13 paragraf/380 kelime/4.4 sn TÜRKÇE.
+- YENİ MOTOR 2 — GOOGLE TRANSLATE VEKİLİ (gtranslate): translate.goog ({host-nokta→tire}.translate.goog?_x_tr_sl=…&_x_tr_tl=tr) sayfayı GOOGLE ağından çeker (bot/jeo engellerini aşar) ve metni DOĞRUDAN TÜRKÇE getirir — çeviri adımı atlanır (useHtml alreadyTurkish). Vekil grubuna corsproxy.io da eklendi (Promise.any 3'lü).
+- ZAMAN BÜTÇESİ: Vercel 60 sn fonksiyon sınırına karşı fetchAndTranslateFullArticle içinde leftMs() kapıları (Vercel'de bütçe 40 sn, yerel 120 sn) — Jina/vekill/gtranslate/wayback adımları kalan süreye göre atlanır; çeviriye yer kalır, FUNCTION_INVOCATION_TIMEOUT önlenir.
+- ÇEVİRİ YEDEĞİ HATASI (bu turda yakalanan): skipZai=true iken translateChunk döngüsü hiç dönmüyor, httpTranslate yedeği ÇALIŞMIYOR, İngilizce metin "translated:true" etiketiyle dönüyordu. httpFallback() ayrıştırıldı; skipZai'de doğrudan çağrılıyor. Vercel simülasyon testi: en makale 13 paragraf tam Türkçe (2.4 sn).
+- SCAN GİRİŞ FİLTRESİ: searchWebBingNewsRss artık çözülemeyen yönlendirici linkli (parametresiz apiclick) maddeleri hiç kaydetmiyor (isUnresolvableUrl); canlıdaki 1 bozuk apiclick kaydı için route isUnresolvableUrl ile no_article temiz mesaj veriyor.
+- RESOLVER GÜÇLENDİRME: resolveRealArticleUrl Bing News + DDG (başlık kelimeleri + site:domain) paralel arama.
+- Yerel test: scripts/test-full-read-fixes.ts (9 kontrol, tümü geçti); gerçek dha.com.tr makalesi direct 15 paragraf/1309 kelime/1.2 sn; MSN API 0.1 sn.
+- Canlı doğrulama: MSN tr (11 paragraf) ✅, MSN en→Türkçe (13 paragraf) ✅, apiclick → no_article ✅, educamundo (site ölü) → unreachable dürüst mesaj + çöp önbellek yenilenir ✅, tarama tr+en adımları veri ekledi ✅.
+- Bilinen meşru sınır: sitenin kendisi kapalıysa (educamundo), yabancı IP'leri engelliyorsa (sledcom.gov.ru) veya makale hiç varsa yoksa (ana sayfa URL'li seed kayıtları) Tam Oku kayıt özetiyle okumaya devam eder — bu hata değil, kaynağın erişilemezliği.
+
+Stage Summary:
+- Bing RSS varlık çözümüyle tarama hattı + ana sayfa çözücüsü yeniden canlı; bozuk apiclick kayıtları bir daha oluşmuyor
+- MSN content API + gtranslate vekili + 3'lü vekil grubu + zaman bütçesiyle Tam Oku erişim alanı genişledi, Vercel 60 sn sınırı güvene alındı
+- Çıkarım kalitesi: niteliksiz <p> desteği, yorum/junk/harf-oranı filtreleri, çöp önbellek otomatik yenilemesi
+- skipZai çeviri yedeği hatası giderildi — Vercel'de çeviriler gerçekten Türkçe
+- Değişen dosyalar: src/lib/llm.ts, src/app/api/full-article/route.ts, scripts/test-full-read-fixes.ts (yeni)
+- Deploy: 3 production deploy (son: oyi-global-ndzg06tj5)

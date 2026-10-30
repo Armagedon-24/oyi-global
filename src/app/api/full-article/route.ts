@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
   fetchAndTranslateFullArticle,
-  isHomepageUrl,
+  filterJunkParagraphs,
+  isGoodExtraction,
+  isUnresolvableUrl,
   resolveRealArticleUrl,
 } from "@/lib/llm";
 import { extractImagesFromArticle, type ExtractedImage } from "@/lib/image-extract";
@@ -74,13 +76,15 @@ export async function POST(req: Request) {
 
     // Önbellekteki tam makale varsa ve zorlanmadıysa doğrudan döndür.
     // Görsel çıkarımı paralel yürür, 8 sn'yi aşarsa yanıtı bloklamaz.
+    // Kalite kapısı: eski zincirin çöp/banner metniyle dolduğu önbellek geçersiz sayılır.
     if (finding.fullArticle && !force) {
       try {
         const parsed = JSON.parse(finding.fullArticle);
         const cacheValid =
           Array.isArray(parsed?.paragraphs) &&
           parsed.paragraphs.length > 0 &&
-          parsed?.v === 2; // v2 = yeni çıkarım zincirinin kaliteli önbelleği
+          parsed?.v === 2 && // v2 = yeni çıkarım zincirinin kaliteli önbelleği
+          isGoodExtraction(filterJunkParagraphs(parsed.paragraphs as string[])); // çöp/banner önbelleği yenilenir
         if (cacheValid) {
           const images = await softTimeout(ensureFindingImages(finding), 8000, [] as ExtractedImage[]);
           return NextResponse.json({
@@ -100,10 +104,11 @@ export async function POST(req: Request) {
     // Görseller makale getirmesiyle PARALEL yürür; 12 sn'yi aşarsa boş listeyle geçilir
     const imagesPromise = softTimeout(ensureFindingImages(finding), 12000, [] as ExtractedImage[]);
 
-    // Ana sayfa URL'li kayıtlar: makale o adreste yoktur. Önce orijinal başlıkla
-    // aynı alan adındaki gerçek makale adresi aranır; bulunamazsa temizce özete düşülür.
+    // Ana sayfa / çözülemeyen yönlendirici URL'li kayıtlar: makale o adreste yoktur.
+    // Önce orijinal başlıkla aynı alan adındaki gerçek makale adresi aranır;
+    // bulunamazsa temizce özete düşülür.
     let targetUrl = finding.url;
-    if (isHomepageUrl(finding.url)) {
+    if (isUnresolvableUrl(finding.url)) {
       const resolved = await resolveRealArticleUrl(finding.originalTitle, finding.url).catch(
         () => null
       );
@@ -113,7 +118,7 @@ export async function POST(req: Request) {
           success: false,
           error: "no_article",
           message:
-            "Bu kayıt kaynağın ana sayfasına işaret ediyor; makalenin tam metni bu adreste bulunamadı. Kayıt özetiyle okunabilir veya orijinal kaynağa gidilebilir.",
+            "Bu kayıt doğrudan bir makaleye değil, kaynağın ana sayfasına/arama sayfasına işaret ediyor; tam metin bu adreste bulunamadı. Kayıt özetiyle okunabilir veya orijinal kaynağa gidilebilir.",
           images,
         });
       }
@@ -138,7 +143,7 @@ export async function POST(req: Request) {
         success: false,
         error: "unreachable",
         message:
-          "Makalenin tam metni kaynağından okunamadı (sayfa erişime kapı olabilir). Kayıt özetiyle okunabilir veya orijinal kaynağa gidilebilir.",
+          "Makalenin tam metni kaynağından okunamadı — site otomatik okumayı engelliyor olabilir. Daha sonra tekrar deneyin; bu arada kayıt özetiyle okunabilir veya orijinal kaynağa gidilebilir.",
         images,
       });
     }
