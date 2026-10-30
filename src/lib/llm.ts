@@ -392,6 +392,52 @@ export async function searchWebBingNewsRss(query: string, num = 10): Promise<Raw
   }
 }
 
+/** URL ana sayfaya mı işaret ediyor? (makale yolu yok) */
+export function isHomepageUrl(u: string): boolean {
+  try {
+    const parsed = new URL(u);
+    const path = parsed.pathname.replace(/\/+$/, "");
+    return path === "" || /^\/index\.(html?|php|aspx?)$/i.test(path);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ana sayfa URL'li kayıtlar için gerçek makale adresini bulur:
+ * orijinal başlıkla alıntılı Bing News araması yapar, sonuçlardan
+ * AYNI alan adındaki ve yol derinliği olan ilk makale adresini döndürür.
+ * Bulunamazsa null döner — çağıran taraf kayıt özetine düşer.
+ */
+export async function resolveRealArticleUrl(
+  originalTitle: string,
+  homepageUrl: string
+): Promise<string | null> {
+  const title = (originalTitle ?? "").replace(/"/g, " ").trim();
+  if (title.length < 12) return null;
+  let domain = "";
+  try {
+    domain = new URL(homepageUrl).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return null;
+  }
+  const results = await searchWebBingNewsRss(`"${title.slice(0, 90)}"`, 12).catch(() => []);
+  for (const r of results) {
+    const u = decodeBingNewsLink(r.url);
+    if (!u) continue;
+    try {
+      const parsed = new URL(u);
+      if (!/^https?:$/.test(parsed.protocol)) continue;
+      const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+      const path = parsed.pathname.replace(/\/+$/, "");
+      if (host === domain && path.length > 1) return parsed.href;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 export interface TranslateInput {
   index: number;
   title: string;
@@ -593,16 +639,12 @@ Uyarılar:
 
 /** Basit HTML temizleyici */
 function stripHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+  return decodeHtmlEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+  )
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -615,7 +657,7 @@ export interface FullArticleResult {
   title: string; // Türkçe başlık (çevrildiyse)
   paragraphs: string[]; // Tam metin paragrafları (Türkçe)
   wordCount: number; // Çevrilen/okunan toplam kelime sayısı
-  engine: "direct" | "page_reader" | "none"; // Sayfa hangi yolla okundu
+  engine: "direct" | "proxy" | "page_reader" | "jina" | "wayback" | "none"; // Sayfa hangi yolla okundu
   translated: boolean; // Gerçekten çeviri yapıldı mı
 }
 
@@ -624,24 +666,92 @@ const CHUNK_LIMIT = 3800; // Her çeviri parçasının üst sınırı
 
 /** HTML tag dizesinin iç metnini temizler */
 function tagText(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
+  return decodeHtmlEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Kısa paragraflarda site kalıp metni (menü/çerez/abonelik) tespiti */
+const BOILER_RE =
+  /^(cookie|çerez|subscribe|newsletter|abone ol|abonelik|sign in|sign up|log in|login|giriş yap|kayıt ol|üye ol|copyright|©|telif|tüm hakları|all rights|accept all|kabul et|privacy|gizlilik|kvkk|advertisement|reklam|paylaş|share this|tweet|follow|takip et|related|ilgili yazılar|son dakika|error 404|page not found|skip to|içeriğe geç|daha fazla oku|read more|devamını oku|loading|yükleniyor|oturum aç|satın al|checkout|sepet)/i;
+
+/** Adlandırılmış + sayısal HTML varlıklarını çözer (&#8217; gibi kalıntıları temizler) */
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => {
+      try {
+        return String.fromCodePoint(parseInt(h, 16));
+      } catch {
+        return " ";
+      }
+    })
+    .replace(/&#(\d+);/g, (_, d) => {
+      try {
+        return String.fromCodePoint(Number(d));
+      } catch {
+        return " ";
+      }
+    })
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#0?39;/gi, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/&mdash;/gi, "—")
+    .replace(/&ndash;/gi, "–")
+    .replace(/&hellip;/gi, "…")
+    .replace(/&laquo;/gi, "«")
+    .replace(/&raquo;/gi, "»")
+    .replace(/&rsquo;/gi, "'")
+    .replace(/&lsquo;/gi, "'")
+    .replace(/&ldquo;/gi, '"')
+    .replace(/&rdquo;/gi, '"');
+}
+
+/** Tek bir çıkarılmış paragrafın gerçek makale metni olup olmadığına karar verir */
+function isJunkParagraph(text: string): boolean {
+  if (text.length < 45 || text.split(/\s+/).length < 7) return true; // kısa satır / başlık
+  if (text.length < 180 && BOILER_RE.test(text)) return true; // kalıp metni
+  if ((text.match(/[|·•]/g) ?? []).length >= 3) return true; // menü ayraçları
+  return false;
+}
+
+/** Çıkarım makale gövdesi sayılır mı? (menü/çerez kalabalığını eler) */
+function isGoodExtraction(paras: string[]): boolean {
+  if (paras.length < 3) return false;
+  if (paras.join(" ").length < 500) return false;
+  // Paragrafların çoğu kısa satırsa (mağaza/menü/giriş sayfası) makale değildir
+  return looksLikeArticleBody(paras);
+}
+
+/** Bot/sunucu ara sayfalarını (tarayıcı güncelleme, koruma duvarı vb.) tespit eder */
+const PAGE_BLOCK_RE =
+  /(just a moment|checking your browser|enable javascript and cookies|attention required|outdated browser|update your browser|güncel olmayan bir tarayıcı|устаревший браузер|доступ ограничен|erişim engellendi)/i;
+
+/** İlk paragraflar bir engel sayfasına mı ait? */
+function isBlockedPage(paras: string[]): boolean {
+  return paras.length > 0 && PAGE_BLOCK_RE.test(paras.slice(0, 4).join(" "));
+}
+
+/** Gerçek makale gövdelerinde en az birkaç 150+ karakterlik derin paragraf bulunur */
+function looksLikeArticleBody(paras: string[]): boolean {
+  if (paras.filter((p) => p.length >= 150).length < 2) return false;
+  // Orta paragraf çok kısaysa (mağaza/etkinlik/menü sayfası) makale değildir
+  const sorted = [...paras].sort((a, b) => a.length - b.length);
+  const median = sorted[Math.floor(sorted.length / 2)].length;
+  return median >= 120;
 }
 
 /**
  * Makale HTML'inden paragraf yapısını koruyarak ana metni çıkarır:
- * script/style/nav/header/footer/aside/form atılır, <p> blokları sırayla toplanır.
+ * <article> bloğu varsa gövde oradan taranır; script/style/nav/header/footer/aside/form
+ * atılır, kalıp/metin-dışı paragraflar elenir, <p> blokları sırayla toplanır.
  */
 export function extractArticleParagraphs(html: string, maxChars = FULL_TEXT_LIMIT): string[] {
   if (!html) return [];
@@ -649,23 +759,33 @@ export function extractArticleParagraphs(html: string, maxChars = FULL_TEXT_LIMI
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<(nav|header|footer|aside|form|button|svg)[\s\S]*?<\/\1>/gi, " ");
+    .replace(/<(nav|header|footer|aside|form|button|svg|select)[\s\S]*?<\/\1>/gi, " ");
 
-  const paras: string[] = [];
-  const pRe = /<p\s[^>]*>([\s\S]*?)<\/p\s*>/gi;
-  let m: RegExpExecArray | null;
-  let total = 0;
-  while ((m = pRe.exec(cleaned)) !== null) {
-    const text = tagText(m[1]);
-    // Menü/tanıtım cümlecikleri ve tek kelimelik başlıkları ele
-    if (text.length < 45 || text.split(/\s+/).length < 7) continue;
-    // Aşırı bağlantı dolu paragraflar genelde navigasyondur
-    const linkCount = (m[1].match(/<a\s/gi) ?? []).length;
-    if (linkCount > 4) continue;
-    paras.push(text);
-    total += text.length;
-    if (total >= maxChars) break;
-  }
+  // <article> bloğu varsa makale gövdesi büyük olasılıkla oradadır
+  let scope = cleaned;
+  const artMatch = cleaned.match(/<article\b[^>]*>([\s\S]*?)<\/article\s*>/i);
+  if (artMatch && artMatch[1].length > 1000) scope = artMatch[1];
+
+  const collect = (src: string): string[] => {
+    const paras: string[] = [];
+    let total = 0;
+    const pRe = /<p\s[^>]*>([\s\S]*?)<\/p\s*>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = pRe.exec(src)) !== null) {
+      const text = tagText(m[1]);
+      if (isJunkParagraph(text)) continue;
+      // Aşırı bağlantı dolu paragraflar genelde navigasyondur
+      const linkCount = (m[1].match(/<a\s/gi) ?? []).length;
+      if (linkCount > 4) continue;
+      paras.push(text);
+      total += text.length;
+      if (total >= maxChars) break;
+    }
+    return paras;
+  };
+
+  let paras = collect(scope);
+  if (paras.length === 0 && scope !== cleaned) paras = collect(cleaned);
 
   // <p> yoksa (bazı sayfalarda metin div'lerde) tüm sayfa metnine düş
   if (paras.length === 0) {
@@ -677,7 +797,8 @@ export function extractArticleParagraphs(html: string, maxChars = FULL_TEXT_LIMI
       for (const s of sentences) {
         buf = buf ? `${buf} ${s}` : s;
         if (buf.length >= 320) {
-          paras.push(buf.trim());
+          const t = buf.trim();
+          if (!isJunkParagraph(t)) paras.push(t);
           buf = "";
           if (paras.join(" ").length >= maxChars) break;
         }
@@ -686,34 +807,102 @@ export function extractArticleParagraphs(html: string, maxChars = FULL_TEXT_LIMI
     }
   }
 
-  return paras.slice(0, 150);
+  return isBlockedPage(paras) ? [] : paras.slice(0, 150);
 }
 
-/**
- * Sayfayı okur: önce hızlı doğrudan indirme, olmazsa page_reader yedeği.
- */
-async function fetchPageHtmlForText(
-  url: string
-): Promise<{ html: string; engine: FullArticleResult["engine"] }> {
-  try {
-    const { fetchPageHtmlDirect } = await import("./image-extract");
-    const html = await fetchPageHtmlDirect(url, 11000);
-    if (html && html.length > 500) return { html, engine: "direct" };
-  } catch {
-    /* yedeğe düş */
+/* --- Sayfa okuma yedek zinciri (Tam Oku) ------------------------------ */
+
+const PROXY_TIMEOUT = 11000; // Her vekil için zaman aşımı
+
+/** AllOrigins ücretsiz vekili — hedef site IP'mizi engellediyse kendi ağından çeker */
+async function fetchViaAllOrigins(url: string): Promise<string> {
+  const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, {
+    headers: { "User-Agent": DDG_UA, Accept: "text/html,*/*" },
+    signal: AbortSignal.timeout(PROXY_TIMEOUT),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`allorigins HTTP ${res.status}`);
+  const text = await res.text();
+  if (text.length < 800 || !/<[a-z][\s\S]*>/i.test(text)) throw new Error("allorigins: HTML yok");
+  return text;
+}
+
+/** CodeTabs ücretsiz vekili — ikinci yedek ağ */
+async function fetchViaCodetabs(url: string): Promise<string> {
+  const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`, {
+    headers: { "User-Agent": DDG_UA, Accept: "text/html,*/*" },
+    signal: AbortSignal.timeout(PROXY_TIMEOUT),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`codetabs HTTP ${res.status}`);
+  const text = await res.text();
+  if (text.length < 800 || !/<[a-z][\s\S]*>/i.test(text)) throw new Error("codetabs: HTML yok");
+  return text;
+}
+
+/** Jina Reader — JS ile çizilen sayfaları düz metne çevirir (anahtarsız; IP'ye göre 401 dönebilir) */
+async function fetchViaJinaReader(url: string): Promise<string> {
+  const res = await fetch(`https://r.jina.ai/${url}`, {
+    headers: { "User-Agent": DDG_UA, Accept: "text/plain", "X-Return-Format": "text" },
+    signal: AbortSignal.timeout(18000),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`jina HTTP ${res.status}`);
+  const text = await res.text();
+  return text.length > 600 ? text : "";
+}
+
+/** Wayback Machine — site tamamen erişilemezse arşiv anlık görüntüsü */
+async function fetchViaWayback(url: string): Promise<string> {
+  const res = await fetch(
+    `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`,
+    { headers: { "User-Agent": DDG_UA }, signal: AbortSignal.timeout(12000), cache: "no-store" }
+  );
+  if (!res.ok) return "";
+  const j: any = await res.json().catch(() => null);
+  const snap = j?.archived_snapshots?.closest;
+  if (!snap?.available || !snap?.url) return "";
+  const { fetchPageHtmlDirect } = await import("./image-extract");
+  return await fetchPageHtmlDirect(snap.url, 15000);
+}
+
+/** Jina Reader düz metin çıktısından paragraf ayrıştırır (markdown kalıntılarını temizler) */
+export function extractParagraphsFromPlainText(raw: string, maxChars = FULL_TEXT_LIMIT): string[] {
+  if (!raw) return [];
+  let body = raw;
+  const cuts = [raw.indexOf("Markdown Content:"), raw.indexOf("Text Content:")].filter(
+    (i) => i >= 0
+  );
+  if (cuts.length > 0) body = raw.slice(Math.min(...cuts));
+  body = body
+    .replace(/^(Markdown Content:|Text Content:)/i, "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]\n]*)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^[-*+]\s+/gm, "")
+    .replace(/^>\s?/gm, "");
+
+  const paras: string[] = [];
+  let total = 0;
+  for (const block of body.split(/\n{2,}/)) {
+    const text = block.replace(/\s+/g, " ").trim();
+    if (isJunkParagraph(text)) continue;
+    paras.push(text);
+    total += text.length;
+    if (total >= maxChars) break;
   }
-  try {
-    const zai = await getZAI();
-    const page = (await Promise.race([
-      zai.functions.invoke("page_reader", { url }) as Promise<any>,
-      new Promise((_, rej) => setTimeout(() => rej(new Error("zaman aşımı")), 22000)),
-    ])) as any;
-    const html: string = page?.data?.html ?? "";
-    if (html) return { html, engine: "page_reader" };
-  } catch {
-    /* her iki yol da başarısız */
+  return isBlockedPage(paras) ? [] : paras.slice(0, 150);
+}
+
+/** Paragraf listesini parça parça Türkçeye çevirir */
+async function translateParagraphs(sourceParas: string[], language: string): Promise<string[]> {
+  const chunks = splitIntoChunks(sourceParas);
+  const out: string[] = [];
+  for (const chunk of chunks) {
+    out.push(...(await translateChunk(chunk, language)));
   }
-  return { html: "", engine: "none" };
+  return out.filter((p) => p && p.trim()).slice(0, 150);
 }
 
 function splitIntoChunks(paras: string[]): string[][] {
@@ -772,13 +961,22 @@ ${chunk.map((p, i) => `--${i + 1}--\n${p}`).join("\n\n")}`;
     } catch (err) {
       console.error(`[translateChunk] Deneme ${attempt} başarısız:`, err);
       if (attempt === 2) {
-        // Z-AI yoksa ücretsiz HTTP çevirisi; çevrilemeyen paragraf orijinal kalsın
-        return Promise.all(
-          chunk.slice(0, 40).map(async (p) => {
-            const t = p.length <= 1200 ? await httpTranslate(p, langName).catch(() => "") : "";
-            return t || `${p} *(çevrilemedi)*`;
-          })
+        // Z-AI yoksa ücretsiz HTTP çevirisi — paralel işçi havuzuyla hızlı ve yapıyı koruyarak
+        const limited = chunk.slice(0, 60);
+        const results: string[] = new Array(limited.length).fill("");
+        let cursor = 0;
+        const worker = async () => {
+          while (cursor < limited.length) {
+            const i = cursor++;
+            const p = limited[i];
+            const t = p.length <= 2000 ? await httpTranslate(p, langName).catch(() => "") : "";
+            results[i] = t || `${p} *(çevrilemedi)*`;
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(8, limited.length) }, () => worker())
         );
+        return results;
       }
       await new Promise((r) => setTimeout(r, 1000));
     }
@@ -788,7 +986,10 @@ ${chunk.map((p, i) => `--${i + 1}--\n${p}`).join("\n\n")}`;
 
 /**
  * Tam Oku: makalenin TAM metnini kaynaktan okur ve Türkçeye çevirir.
- * Kaynak dil Türkçeyse çeviri atlanır. Hata durumunda mümkün olan kısmı döndürür.
+ * Okuma zinciri: doğrudan indirme → Jina Reader → page_reader (yerel) →
+ * ücretsiz vekiller (AllOrigins, CodeTabs) → Wayback Machine → zayıf çıkarım.
+ * Her adımda kalite kapısı çalışır: menü/çerez kalabalığı makale sayılmaz.
+ * Kaynak dil Türkçeyse çeviri atlanır.
  */
 export async function fetchAndTranslateFullArticle(
   url: string,
@@ -796,45 +997,117 @@ export async function fetchAndTranslateFullArticle(
   trTitle: string,
   language: string
 ): Promise<FullArticleResult> {
-  const { html, engine } = await fetchPageHtmlForText(url);
-
-  if (engine === "none" || !html) {
-    // Sayfa okunamadı — boş sonuç; çağıran taraf özete düşer
-    return { title: trTitle, paragraphs: [], wordCount: 0, engine: "none", translated: false };
-  }
-
-  const sourceParas = extractArticleParagraphs(html);
   const isTurkish = /^tr\b/i.test(language) || /türk/i.test(language);
+  const skipZai = Boolean(process.env.VERCEL); // Vercel'de Z-AI uçları yok — zaman kaybını önle
 
-  if (isTurkish) {
-    return {
-      title: trTitle,
-      paragraphs: sourceParas,
-      wordCount: sourceParas.join(" ").split(/\s+/).filter(Boolean).length,
-      engine,
-      translated: false,
-    };
-  }
-
-  if (sourceParas.length === 0) {
-    return { title: trTitle, paragraphs: [], wordCount: 0, engine, translated: false };
-  }
-
-  const chunks = splitIntoChunks(sourceParas);
-  const translatedParts: string[] = [];
-  for (const chunk of chunks) {
-    const done = await translateChunk(chunk, language);
-    translatedParts.push(...done);
-  }
-
-  const paragraphs = translatedParts.filter((p) => p && p.trim()).slice(0, 150);
-  return {
+  const finish = (
+    paragraphs: string[],
+    engine: FullArticleResult["engine"],
+    translated: boolean
+  ): FullArticleResult => ({
     title: trTitle,
     paragraphs,
     wordCount: paragraphs.join(" ").split(/\s+/).filter(Boolean).length,
     engine,
-    translated: true,
+    translated,
+  });
+
+  /** HTML kaynağını çıkarır, gerekiyorsa çevirir; yetersizse null döner */
+  const useHtml = async (
+    html: string,
+    engine: FullArticleResult["engine"]
+  ): Promise<FullArticleResult | null> => {
+    const paras = extractArticleParagraphs(html);
+    if (!isGoodExtraction(paras)) return null;
+    if (isTurkish) return finish(paras, engine, false);
+    return finish(await translateParagraphs(paras, language), engine, true);
   };
+
+  // 1) Doğrudan indirme (en hızlı yol)
+  let directHtml = "";
+  try {
+    const { fetchPageHtmlDirect } = await import("./image-extract");
+    directHtml = await fetchPageHtmlDirect(url, 10000);
+  } catch {
+    /* vekillere düş */
+  }
+  if (directHtml.length > 800) {
+    const paras = extractArticleParagraphs(directHtml);
+    if (isGoodExtraction(paras)) {
+      return isTurkish
+        ? finish(paras, "direct", false)
+        : finish(await translateParagraphs(paras, language), "direct", true);
+    }
+  }
+
+  // 2) Jina Reader — JS ile çizilen sayfalar (engelliyse hızlıca düşer)
+  const jinaText = await fetchViaJinaReader(url).catch(() => "");
+  if (jinaText) {
+    const paras = extractParagraphsFromPlainText(jinaText);
+    if (isGoodExtraction(paras)) {
+      return isTurkish
+        ? finish(paras, "jina", false)
+        : finish(await translateParagraphs(paras, language), "jina", true);
+    }
+  }
+
+  // 3) Z-AI page_reader (yalnızca yerel ortamda çalışır)
+  if (!skipZai) {
+    try {
+      const zai = await getZAI();
+      const page = (await Promise.race([
+        zai.functions.invoke("page_reader", { url }) as Promise<any>,
+        new Promise((_, rej) => setTimeout(() => rej(new Error("zaman aşımı")), 20000)),
+      ])) as any;
+      const zhtml: string = page?.data?.html ?? "";
+      if (zhtml) {
+        const r = await useHtml(zhtml, "page_reader");
+        if (r) return r;
+      }
+    } catch {
+      /* sonraki yola geç */
+    }
+  }
+
+  // 4) Ücretsiz vekiller — paralel denenir, ilk geçerli HTML kazanır
+  try {
+    const winner = await Promise.any([
+      fetchViaAllOrigins(url),
+      fetchViaCodetabs(url),
+    ]);
+    const r = await useHtml(winner, "proxy");
+    if (r) return r;
+  } catch {
+    /* her iki vekil de başarısız — wayback'e geç */
+  }
+
+  // 5) Wayback Machine arşivi
+  try {
+    const wbHtml = await fetchViaWayback(url);
+    if (wbHtml) {
+      const r = await useHtml(wbHtml, "wayback");
+      if (r) return r;
+    }
+  } catch {
+    /* boş */
+  }
+
+  // 6) Son çare: doğrudan indirmeden gelen zayıf çıkarımı kullan (hiç yoktan iyidir)
+  if (directHtml.length > 800) {
+    const paras = extractArticleParagraphs(directHtml);
+    if (
+      paras.length >= 2 &&
+      paras.join(" ").length >= 400 &&
+      looksLikeArticleBody(paras)
+    ) {
+      return isTurkish
+        ? finish(paras, "direct", false)
+        : finish(await translateParagraphs(paras, language), "direct", true);
+    }
+  }
+
+  // Sayfa hiç okunamadı — boş sonuç; çağıran taraf özete düşer
+  return { title: trTitle, paragraphs: [], wordCount: 0, engine: "none", translated: false };
 }
 
 /**

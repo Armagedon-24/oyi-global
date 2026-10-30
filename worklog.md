@@ -447,3 +447,26 @@ Stage Summary:
 - Görev 13 KAPALI: admin manuel haber+görsel yayını canlıda uçtan uca kanıtlandı; tüm sayfalar 390px'te taşmasız
 - Görev 14 KAPALI: fütüristik HUD admin arayüzü canlıda görsel olarak doğrulandı (koyu terminal teması, amber vurgular, köşe süsleri, tarama çizgisi)
 - Kalan potansiyel işler: derin analiz LLM'i Vercel'de ZAI uçları yok (HTTP çeviri yedeği çalışıyor); kullanıcıdan token revoke hatırlatması
+
+---
+Task ID: 22
+Agent: main-agent (Z.ai)
+Task: "Tam Oku" tam metin getirmenin düzeltilmesi — haberi büyük açtığında makale metni gelmiyordu
+
+Work Log:
+- KÖK NEDEN 1 (çıkarım kalitesi): eski zincir doğrudan indirmeden gelen ham HTML'den <p> topluyordu; site menüleri, çerez/abonelik metinleri, mağaza sayfaları "makale" sayılıyordu (örn. mir-zakona = dergi menüsü, investigarte = mağaza ana sayfası).
+- KÖK NEDEN 2 (tek yol): Vercel'de ZAI page_reader ölü olduğundan sayfa okuma yalnızca doğrudan indirmeye dayanıyordu; bot/jeo-engelli siteler "unreachable" oluyordu (krk.sledcom.ru vb.).
+- KÖK NEDEN 3 (ana sayfa URL sorunu): canlı arşivdeki 200 bulgudan 116'sının (%58) URL'si kaynak ana sayfası — makale o adreste hiç yoktu; hiçbir çıkarım tam metin üretemez.
+- YENİ OKUMA ZİNCİRİ (llm.ts): doğrudan indirme → Jina Reader (r.jina.ai, düz metin) → ZAI page_reader (yalnız yerel, process.env.VERCEL ile atlanır) → ücretsiz vekiller AllOrigins+CodeTabs (Promise.any, paralel) → Wayback Machine arşivi → son çare zayıf çıkarım.
+- KALİTE KAPILARI: <article> bloğu kapsam seçimi; isJunkParagraph (kısa satır, menü ayracı |·•, kalıp metni BOILER_RE); looksLikeArticleBody (≥2 adet 150+ karakter paragraf + ortanca paragraf ≥120 kar — mağaza/menü sayfalarını eler); PAGE_BLOCK_RE (tarayıcı güncelleme/Cloudflare/erişim engellendi ara sayfaları sayfa düzeyinde reddeder); isGoodExtraction (≥3 paragraf + ≥500 karakter).
+- HTML VARLIK DÜZELTMESİ: sayısal varlık çözücü (&#8217; &#x27; vb. artık karaktere dönüşüyor) — tagText/stripHtml/decodeHtmlEntities.
+- ÇEVİRİ YEDEĞİ PARALELLEŞTİ: Vercel'de ZAI chat olmadığından HTTP çeviri zinciri paragraf başına sırayla yavaş çalışıyordu → 8 eşzamanlı işçi havuzu, paragraf üst sınırı 60/2000 kar.
+- ANA SAYFA ÇÖZÜCÜ: isHomepageUrl + resolveRealArticleUrl (orijinal başlıkla alıntılı Bing News araması, aynı alan adı filtresi) — çözülürse kaydın url'i gerçek makale adresine güncellenir; çözülmezse "no_article" ile temiz özete düşer (30-60 sn junk denemesi yerine ~5 sn).
+- ROUTE İYİLEŞTMESİ: görsel çıkarımı makale getirmesiyle paralel (softTimeout 12 sn); önbellek v2 işareti — eski/junk önbellekler otomatik yenilenir; engine bilgisi önbelleğe yazılıyor.
+- DOĞRULAMA (yerel + canlı): forenscope.fr 19 paragraf/513 kelime tam metin ✅ (Vercel'de HTTP çeviriyle); cyberleninka & krim-market (ana sayfa) → no_article temiz mesaj ✅; educamundo (404) & investigarte (mağaza) & krim-market engel sayfası → unreachable/özete düşüş ✅; önbellek yolu cached:true 19 paragraf ✅.
+- DEPLOY: 3 production deploy (son: oyi-global-9qowhpk6l) — canlı doğrulandı.
+
+Stage Summary:
+- Gerçek makale URL'li kayıtlarda tam metin artık 6 kaynaklı yedekli zincirle geliyor; junk/menü/mağaza/engel sayfası metinleri kalite kapılarıyla özet yoluna düşüyor
+- Ana sayfa URL'li eski seed kayıtları (58%) dürüst ve hızlı "kayıt özeti" davranışına geçti; yeni taramalar gerçek makale URL'i kaydettiğinden (decodeBingNewsLink) bundan etkilenmez
+- Bilinen sınır: ana sayfa URL'li kayıtlarda gerçek makale, anahtarsız arama uçlarında bulunamıyorsa özet gösterilir (Bing web RSS çöp döndürüyor, Mojeek erişilemez — resolver Bing News ile sınırlı)

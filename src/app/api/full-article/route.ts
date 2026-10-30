@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { fetchAndTranslateFullArticle } from "@/lib/llm";
+import {
+  fetchAndTranslateFullArticle,
+  isHomepageUrl,
+  resolveRealArticleUrl,
+} from "@/lib/llm";
 import { extractImagesFromArticle, type ExtractedImage } from "@/lib/image-extract";
 
 export const runtime = "nodejs";
@@ -41,11 +45,20 @@ async function ensureFindingImages(finding: {
   }
 }
 
+/** Uzun sürebilecek işlemleri yumuşak zaman aşımına bağlar (taşarsa yedek değeri döner) */
+async function softTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    p.catch(() => fallback),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 /**
  * POST /api/full-article
  * Body: { id, force? } — makalenin TAM metnini orijinal kaynaktan okur,
  * Türkçeye çevirir ve önbelleğe kaydeder (Finding.fullArticle JSON).
  * Yanıt: { success, cached, paragraphs[], wordCount, translated, images[] }
+ * Önbellek v2 işaretli değilse (eski/junk kayıt) içerik yenilenir.
  */
 export async function POST(req: Request) {
   try {
@@ -59,14 +72,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Bulgu bulunamadı" }, { status: 404 });
     }
 
-    // Görseller önbellekten bağımsız olarak garanti edilir
-    const images = await ensureFindingImages(finding);
-
-    // Önbellekteki tam makale varsa ve zorlanmadıysa doğrudan döndür
+    // Önbellekteki tam makale varsa ve zorlanmadıysa doğrudan döndür.
+    // Görsel çıkarımı paralel yürür, 8 sn'yi aşarsa yanıtı bloklamaz.
     if (finding.fullArticle && !force) {
       try {
         const parsed = JSON.parse(finding.fullArticle);
-        if (Array.isArray(parsed?.paragraphs)) {
+        const cacheValid =
+          Array.isArray(parsed?.paragraphs) &&
+          parsed.paragraphs.length > 0 &&
+          parsed?.v === 2; // v2 = yeni çıkarım zincirinin kaliteli önbelleği
+        if (cacheValid) {
+          const images = await softTimeout(ensureFindingImages(finding), 8000, [] as ExtractedImage[]);
           return NextResponse.json({
             success: true,
             cached: true,
@@ -81,8 +97,35 @@ export async function POST(req: Request) {
       }
     }
 
+    // Görseller makale getirmesiyle PARALEL yürür; 12 sn'yi aşarsa boş listeyle geçilir
+    const imagesPromise = softTimeout(ensureFindingImages(finding), 12000, [] as ExtractedImage[]);
+
+    // Ana sayfa URL'li kayıtlar: makale o adreste yoktur. Önce orijinal başlıkla
+    // aynı alan adındaki gerçek makale adresi aranır; bulunamazsa temizce özete düşülür.
+    let targetUrl = finding.url;
+    if (isHomepageUrl(finding.url)) {
+      const resolved = await resolveRealArticleUrl(finding.originalTitle, finding.url).catch(
+        () => null
+      );
+      if (!resolved) {
+        const images = await imagesPromise;
+        return NextResponse.json({
+          success: false,
+          error: "no_article",
+          message:
+            "Bu kayıt kaynağın ana sayfasına işaret ediyor; makalenin tam metni bu adreste bulunamadı. Kayıt özetiyle okunabilir veya orijinal kaynağa gidilebilir.",
+          images,
+        });
+      }
+      targetUrl = resolved;
+      // Çözülen gerçek adresi kayda işle — sonraki açılışlar doğrudan makaleyi okur
+      await db.finding
+        .update({ where: { id }, data: { url: resolved } })
+        .catch(() => null);
+    }
+
     const article = await fetchAndTranslateFullArticle(
-      finding.url,
+      targetUrl,
       finding.originalTitle,
       finding.trTitle,
       finding.language
@@ -90,6 +133,7 @@ export async function POST(req: Request) {
 
     // Sayfa hiç okunamadıysa önbelleğe alma — kullanıcı tekrar deneyebilsin
     if (article.paragraphs.length === 0) {
+      const images = await imagesPromise;
       return NextResponse.json({
         success: false,
         error: "unreachable",
@@ -104,16 +148,19 @@ export async function POST(req: Request) {
         where: { id },
         data: {
           fullArticle: JSON.stringify({
+            v: 2,
             title: article.title,
             paragraphs: article.paragraphs,
             wordCount: article.wordCount,
             translated: article.translated,
+            engine: article.engine,
             fetchedAt: new Date().toISOString(),
           }),
         },
       })
       .catch(() => null);
 
+    const images = await imagesPromise;
     return NextResponse.json({
       success: true,
       cached: false,
