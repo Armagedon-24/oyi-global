@@ -28,7 +28,11 @@ export function resolveDatabaseUrl(): string | undefined {
     ([key, val]) =>
       typeof val === "string" &&
       /^postgres(ql)?:\/\//i.test(val) &&
-      /(DATABASE_URL|POSTGRES_URL|POSTGRES_PRISMA_URL)$/i.test(key)
+      /(DATABASE_URL|POSTGRES_URL|POSTGRES_PRISMA_URL)$/i.test(key) &&
+      // Kimlik bilgisi taşımayan URL'leri ele (örn. entegrasyon şablonlarının
+      // boş bıraktığı postgres://host/db biçimindeki değişkenler): kullanıcı
+      // ve/veya şifre olmadan sunucu kimlik doğrulaması imkânsızdır.
+      /\/\/[^@\s]+@/.test(val)
   ) as [string, string][];
 
   const pick = (re: RegExp): string | undefined => postgresVars.find(([key]) => re.test(key))?.[1];

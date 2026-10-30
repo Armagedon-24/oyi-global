@@ -85,21 +85,53 @@ const DDL: string[] = [
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Briefing_pkey" PRIMARY KEY ("id")
   )`,
-  `DO $$
-  BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Finding_scanId_fkey') THEN
-      ALTER TABLE "Finding" ADD CONSTRAINT "Finding_scanId_fkey"
-        FOREIGN KEY ("scanId") REFERENCES "ScanRun"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-    END IF;
-  END $$`,
-  `DO $$
-  BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Comment_findingId_fkey') THEN
-      ALTER TABLE "Comment" ADD CONSTRAINT "Comment_findingId_fkey"
-        FOREIGN KEY ("findingId") REFERENCES "Finding"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-    END IF;
-  END $$`,
 ];
+
+/**
+ * Dış anahtarlar. NileDB gibi bazı serverless Postgres sunucuları `DO $$ … $$`
+ * PL/pgSQL bloklarını desteklemediğinden, anahtar varlığını önce pg_constraint
+ * üzerinde okuyor, yoksa koşullu ALTER TABLE ile ekliyoruz.
+ */
+const FK_CHECKS: { name: string; sql: string }[] = [
+  {
+    name: "Finding_scanId_fkey",
+    sql:
+      `ALTER TABLE "Finding" ADD CONSTRAINT "Finding_scanId_fkey" ` +
+      `FOREIGN KEY ("scanId") REFERENCES "ScanRun"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+  },
+  {
+    name: "Comment_findingId_fkey",
+    sql:
+      `ALTER TABLE "Comment" ADD CONSTRAINT "Comment_findingId_fkey" ` +
+      `FOREIGN KEY ("findingId") REFERENCES "Finding"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+  },
+];
+
+async function applyForeignKeys(
+  results: { step: string; ok: boolean; error?: string }[]
+) {
+  for (const fk of FK_CHECKS) {
+    try {
+      const rows = (await db.$queryRawUnsafe<{ n: number }[]>(
+        `SELECT COUNT(*)::int AS n FROM pg_constraint WHERE conname = $1`,
+        fk.name
+      )) as unknown as { n: number }[];
+      const exists = Number(Array.isArray(rows) ? rows[0]?.n ?? 0 : 0) > 0;
+      if (exists) {
+        results.push({ step: `FK ${fk.name} (zaten var)`, ok: true });
+      } else {
+        await db.$executeRawUnsafe(fk.sql);
+        results.push({ step: `FK ${fk.name} eklendi`, ok: true });
+      }
+    } catch (err) {
+      results.push({
+        step: `FK ${fk.name}`,
+        ok: false,
+        error: String((err as Error)?.message ?? err).slice(0, 300),
+      });
+    }
+  }
+}
 
 function asDate(value: unknown): Date | null {
   if (!value || typeof value !== "string") return null;
@@ -233,6 +265,8 @@ export async function POST(req: Request) {
       });
     }
   }
+
+  await applyForeignKeys(results);
 
   const failed = results.filter((r) => !r.ok);
   let seed: Record<string, string> | null = null;

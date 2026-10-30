@@ -72,6 +72,8 @@ export async function searchWeb(query: string, num = 10, recencyDays = 365): Pro
   }
   const ddg = await searchWebDuckDuckGo(query, num).catch(() => []);
   if (ddg.length > 0) return ddg;
+  const bing = await searchWebBingNewsRss(query, num).catch(() => []);
+  if (bing.length > 0) return bing;
   return searchWebGoogleNewsRss(query, num);
 }
 
@@ -309,6 +311,84 @@ function decodeGoogleNewsLink(link: string): string {
     return m ? m[0] : "";
   } catch {
     return "";
+  }
+}
+
+/**
+ * Bing News yönlendirme bağlantısını (apiclick.aspx) gerçek makale adresine
+ * çözer: url= parametresinde URL-kodlanmış hedef adres taşınır. Zaten gerçek
+ * bir makale adresiyse olduğu gibi döner; çözülemezse boş döner.
+ */
+function decodeBingNewsLink(link: string): string {
+  try {
+    if (!/bing\.com\/news\/apiclick\.aspx/i.test(link)) return link;
+    const m = link.match(/[?&]url=([^&]+)/);
+    if (!m) return "";
+    const real = decodeURIComponent(m[1]);
+    return /^https?:\/\//i.test(real) ? real : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Bing News RSS araması (anahtar gerektirmez, RSS uçları bot engellemesine
+ * dayanıklıdır — Vercel sunucusuz IP'leri için en güvenilir yedek). RSS'te
+ * parça metni (snippet) bulunmadığından snippet boş döner; tarama hattındaki
+ * MIN_SNIPPET_LEN filtresi bu maddeleri elemesin diye başlığın kendisi
+ * özet olarak konur.
+ */
+export async function searchWebBingNewsRss(query: string, num = 10): Promise<RawSearchItem[]> {
+  try {
+    const res = await fetch(
+      `https://www.bing.com/news/search?q=${encodeURIComponent(query)}&format=RSS`,
+      {
+        headers: { "User-Agent": DDG_UA, Accept: "application/rss+xml,application/xml,text/xml" },
+        signal: AbortSignal.timeout(15000),
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return [];
+    const xml = await res.text();
+
+    const items: RawSearchItem[] = [];
+    const itemRe = /<item>([\s\S]*?)<\/item>/g;
+    let m: RegExpExecArray | null;
+    while ((m = itemRe.exec(xml)) !== null && items.length < num) {
+      const block = m[1];
+      const pickTag = (tag: string): string => {
+        const t = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+        return t ? t[1].replace(/<!\[CDATA\[/g, "").replace(/\]\]>/g, "").trim() : "";
+      };
+      const title = tagText(pickTag("title")).trim();
+      const rawLink = pickTag("link");
+      const link = decodeBingNewsLink(rawLink);
+      const description = tagText(pickTag("description")).trim();
+      if (!link || !/^https?:\/\//i.test(link) || title.length < 8) continue;
+      const pubDate = pickTag("pubDate");
+      let date = "";
+      if (pubDate) {
+        const d = new Date(pubDate);
+        if (!isNaN(d.getTime())) date = d.toISOString().slice(0, 10);
+      }
+      let host = "";
+      try {
+        host = new URL(link).hostname;
+      } catch {
+        continue;
+      }
+      items.push({
+        url: link,
+        name: title,
+        snippet: description || title,
+        host_name: host,
+        date,
+      });
+    }
+    return items;
+  } catch (err) {
+    console.error(`[searchWebBingNewsRss] Arama hatası (${query}):`, err);
+    return [];
   }
 }
 

@@ -82,6 +82,7 @@ export async function POST(req: Request) {
 
     // 7) Geçerli olanları veritabanına kaydet
     const savedFindings: Awaited<ReturnType<typeof db.finding.create>>[] = [];
+    let lastSaveError: string | null = null;
     for (const tr of translated) {
       if (!tr.trTitle || tr.trTitle.length < 5) continue;
 
@@ -113,6 +114,7 @@ export async function POST(req: Request) {
         if (savedFindings.length >= MAX_NEW_PER_STEP) break;
       } catch (err: any) {
         // unique constraint vb. — tek kayıt hatası tüm adımı bozmasın
+        lastSaveError = String(err?.message ?? err).slice(0, 250);
         if (!String(err?.message ?? "").includes("Unique constraint")) {
           console.error("[scan/step] Kayıt hatası:", err);
         }
@@ -155,7 +157,11 @@ export async function POST(req: Request) {
       flag: lang.flag,
       searched: allResults.length,
       relevant: relevant.length,
+      newItems: newItems.length,
+      candidates: candidates.length,
+      translated: translated.length,
       added: savedFindings.length,
+      lastSaveError,
       findings: savedFindings.map((f) => ({
         id: f.id,
         trTitle: f.trTitle,
