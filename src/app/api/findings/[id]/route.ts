@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -67,11 +68,14 @@ export async function PATCH(
   }
 }
 
-/** DELETE /api/findings/[id] — bulguyu siler */
+/** DELETE /api/findings/[id] — bulguyu siler (yalnızca yönetici) */
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   try {
     const { id } = await params;
     await db.finding.delete({ where: { id } });

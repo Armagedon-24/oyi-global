@@ -116,7 +116,7 @@ export function WatchlistDialog({ onChanged, openSignal }: WatchlistDialogProps)
 
   const searchInArchive = (t: string) => {
     // Ana panelde arama yapılması için event ile bildir
-    window.dispatchEvent(new CustomEvent("krimiscan:search", { detail: t }));
+    window.dispatchEvent(new CustomEvent("oyi:search", { detail: t }));
     setOpen(false);
   };
 

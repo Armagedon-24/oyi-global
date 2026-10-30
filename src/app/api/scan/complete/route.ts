@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-/** POST /api/scan/complete — tarama oturumunu tamamlanmış işaretler */
+/** POST /api/scan/complete — tarama oturumunu tamamlanmış işaretler (yalnızca yönetici) */
 export async function POST(req: Request) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   try {
     const { scanId } = await req.json();
     if (!scanId) {

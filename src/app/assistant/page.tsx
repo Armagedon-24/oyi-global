@@ -47,7 +47,7 @@ const SUGGESTIONS = [
 
 const WELCOME: ChatMessage = {
   role: "assistant",
-  content: `Merhaba! Ben **KrimiScan İstihbarat Asistanıyım**. 
+  content: `Merhaba! Ben **OYİ GLOBAL İstihbarat Asistanıyım**. 
 
 Olay yeri inceleme teknikleri ve adli bilimler alanındaki **küresel arşivinizi** (Türkçeleştirilmiş tüm bulgular) ve güncel web kaynaklarını kullanarak sorularınızı yanıtlıyorum.
 

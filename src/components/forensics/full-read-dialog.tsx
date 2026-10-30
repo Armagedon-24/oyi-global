@@ -13,7 +13,9 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  MessageSquare,
   RefreshCw,
+  Send,
   Star,
   X,
 } from "lucide-react";
@@ -40,6 +42,13 @@ interface FullArticleState {
   cached: boolean;
 }
 
+interface CommentItem {
+  id: string;
+  author: string;
+  body: string;
+  createdAt: string;
+}
+
 const LOADING_PHASES = [
   "Sayfa orijinal kaynağından okunuyor…",
   "Makale metni yapıştırılıyor…",
@@ -52,6 +61,17 @@ function formatDate(s: string | null): string | null {
   const d = new Date(s);
   if (isNaN(d.getTime())) return null;
   return d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function formatCommentDate(s: string): string {
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("tr-TR", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function FullReadDialog({
@@ -197,7 +217,7 @@ export function FullReadDialog({
             {/* Üst şerit */}
             <div className="flex items-center justify-between gap-3 border-b border-stone-900/25 pb-2 text-[9px] uppercase tracking-[0.24em] text-stone-600 sm:text-[10px]">
               <span className="mag-serif font-bold tracking-[0.18em] text-stone-800">
-                KRİMİSCAN GLOBAL
+                OYİ GLOBAL
               </span>
               <span className="min-w-0 flex-1 truncate text-center">
                 {metaBadge} · {categoryLabel(finding.category)}
@@ -259,7 +279,7 @@ export function FullReadDialog({
                     {LOADING_PHASES[phase]}
                   </p>
                   <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-stone-500">
-                    Derin analiz gibi tam metin getirme · önbelleğe alınır
+                    Tam metin getirme · sonuç önbelleğe alınır
                   </p>
                 </div>
                 {/* Dizgi boş satırları — matbaada sıralanmış satırlar hissi */}
@@ -428,6 +448,9 @@ export function FullReadDialog({
                 )}
               </div>
             )}
+
+            {/* Okur Mektupları — haberin altındaki yorum köşesi */}
+            {!loading && <CommentsSection findingId={finding.id} />}
           </div>
           </div>
         </DialogContent>
@@ -483,4 +506,163 @@ function parseImagesSafe(raw: string): ArticleImage[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Okur Mektupları — haberin altındaki yorum köşesi.
+ * Dergi üslubunda: mektup kartları, kehribar kenar çizgisi, serif yazar adı.
+ */
+function CommentsSection({ findingId }: { findingId: string }) {
+  const [comments, setComments] = useState<CommentItem[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [author, setAuthor] = useState("");
+  const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setLoaded(false);
+    setComments([]);
+    setAuthor("");
+    setBody("");
+    setError(null);
+    fetch(`/api/findings/${findingId}/comments`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (alive && data.success && Array.isArray(data.comments)) setComments(data.comments);
+      })
+      .catch(() => {
+        /* sessiz — liste boş görünür */
+      })
+      .finally(() => {
+        if (alive) setLoaded(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [findingId]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = body.trim();
+    if (trimmed.length < 2) {
+      setError("Yorum en az 2 karakter olmalı.");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/findings/${findingId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ author: author.trim(), body: trimmed }),
+      });
+      const data = await res.json();
+      if (data.success && data.comment) {
+        setComments((prev) => [data.comment, ...prev]);
+        setBody("");
+        setAuthor("");
+      } else {
+        setError(data.error || "Yorum kaydedilemedi. Lütfen tekrar deneyin.");
+      }
+    } catch {
+      setError("Bağlantı hatası — yorum gönderilemedi.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <section className="mt-6 border-t border-stone-900/20 pt-3.5" aria-label="Okur yorumları">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="mag-serif flex items-center gap-2 text-[16px] font-bold text-stone-900">
+          <MessageSquare className="h-4 w-4 text-amber-800" />
+          Okur Mektupları
+        </h3>
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">
+          {comments.length} yorum
+        </span>
+      </div>
+      <p className="mt-0.5 text-[11px] italic leading-snug text-stone-500">
+        Bu haberle ilgili düşüncelerinizi dergiye mektup olarak bırakın; mektuplar sayfanın
+        altında yayımlanır.
+      </p>
+
+      {/* Yorum formu */}
+      <form onSubmit={submit} className="mt-3 space-y-2">
+        {/* Bal küpü — botlar doldurur, insanlar görmez */}
+        <input
+          type="text"
+          name="website"
+          tabIndex={-1}
+          autoComplete="off"
+          className="hidden"
+          aria-hidden="true"
+        />
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,230px)_1fr]">
+          <input
+            type="text"
+            value={author}
+            onChange={(e) => setAuthor(e.target.value)}
+            maxLength={40}
+            placeholder="Adınız (isteğe bağlı)"
+            className="rounded-sm border border-stone-900/30 bg-white/70 px-2.5 py-2 text-[12.5px] text-stone-900 placeholder:text-stone-500 focus:border-amber-700 focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-700"
+          />
+          <input
+            type="text"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            maxLength={1500}
+            placeholder="Yorumunuz…"
+            className="rounded-sm border border-stone-900/30 bg-white/70 px-2.5 py-2 text-[12.5px] text-stone-900 placeholder:text-stone-500 focus:border-amber-700 focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-700"
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-stone-500">
+            {body.trim().length}/1500 karakter
+          </p>
+          <button
+            type="submit"
+            disabled={sending}
+            className="inline-flex items-center gap-1.5 rounded-sm border-2 border-stone-900 bg-stone-900 px-3.5 py-1.5 text-[12px] font-bold text-amber-50 transition-colors hover:bg-stone-800 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+          >
+            {sending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Send className="h-3.5 w-3.5" />
+            )}
+            Yorumu Gönder
+          </button>
+        </div>
+        {error && <p className="text-[12px] font-semibold text-red-800">{error}</p>}
+      </form>
+
+      {/* Yorum listesi */}
+      {loaded && comments.length === 0 ? (
+        <p className="mt-3.5 rounded-sm border border-dashed border-stone-900/30 bg-white/40 px-3 py-3.5 text-center text-[12px] italic text-stone-500">
+          Bu haber için henüz okur mektubu yok — ilk yorumu siz yazın.
+        </p>
+      ) : (
+        <ul className="mt-3.5 space-y-2.5">
+          {comments.map((c) => (
+            <li
+              key={c.id}
+              className="rounded-sm border-l-2 border-amber-700/70 bg-white/50 px-3 py-2 shadow-[inset_0_0_0_1px_rgba(28,25,23,0.06)]"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="mag-serif text-[13px] font-bold text-stone-900">{c.author}</span>
+                <time className="text-[10px] uppercase tracking-[0.12em] text-stone-500">
+                  {formatCommentDate(c.createdAt)}
+                </time>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-relaxed text-stone-800">
+                {c.body}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }

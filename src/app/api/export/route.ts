@@ -45,11 +45,11 @@ export async function GET(req: Request) {
 
     const dateStr = new Date().toISOString().slice(0, 10);
     // HTTP başlıkları yalnızca ByteString kabul eder — dosya adı ASCII olmalı
-    const filenameBase = `krimiscan-arsiv-${dateStr}`;
+    const filenameBase = `oyi-global-arsiv-${dateStr}`;
 
     if (format === "json") {
       const payload = {
-        application: "KrimiScan Global",
+        application: "OYİ GLOBAL",
         exportedAt: new Date().toISOString(),
         total: findings.length,
         findings: findings.map((f) => ({

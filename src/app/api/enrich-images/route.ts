@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { extractImagesFromArticle } from "@/lib/image-extract";
+import { requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -11,8 +12,12 @@ export const maxDuration = 120;
  * Görsel bulunamazsa "none" işaretlenir (tekrar denenmez).
  * Mevcut arşivi tek seferlik zenginleştirmek ve yeni taramaların
  * görsel çıkarımını tamamlayamadığı kayıtları kurtarmak için kullanılır.
+ * Yalnızca yönetici çalıştırabilir.
  */
 export async function POST(req: Request) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   try {
     const body = await req.json().catch(() => ({}));
     const limit = Math.min(15, Math.max(1, Number(body?.limit) || 8));

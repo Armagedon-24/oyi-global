@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * KrimiScan Global — E-Dergi Görünümü
+ * OYİ GLOBAL — E-Dergi Görünümü
  * Bulguları dergi sayfaları halinde sunar: Kapak → İçindekiler → Makale sayfaları.
  * Sayfa geçişlerinde 3D sayfa çevirme (page-flip) animasyonu kullanır.
  */
@@ -15,8 +15,7 @@ import {
   ExternalLink,
   Fingerprint,
   Images as ImagesIcon,
-  Loader2,
-  ScanSearch,
+  MessageSquare,
   Sparkles,
   Star,
 } from "lucide-react";
@@ -24,6 +23,7 @@ import { categoryLabel, getLanguage } from "@/lib/forensics-config";
 import { imgProxyUrl, parseFindingImages } from "@/lib/image-utils";
 import type { FindingItem } from "@/lib/types";
 import { FullReadDialog } from "@/components/forensics/full-read-dialog";
+import { OyiMark } from "@/components/forensics/oyi-logo";
 
 const MAX_ARTICLES = 12;
 const FLIP_MS = 1120;
@@ -64,8 +64,6 @@ type MagPage =
 interface MagazineViewProps {
   findings: FindingItem[];
   loading: boolean;
-  scanning?: boolean;
-  onStartScan?: () => void;
   onToggleBookmark: (f: FindingItem) => void;
 }
 
@@ -100,8 +98,6 @@ function coverImage(f: FindingItem) {
 export function MagazineView({
   findings,
   loading,
-  scanning,
-  onStartScan,
   onToggleBookmark,
 }: MagazineViewProps) {
   const [page, setPage] = useState(0);
@@ -393,7 +389,7 @@ export function MagazineView({
 
   const renderRunningHead = (center: string, folio?: number) => (
     <div className="flex items-center justify-between gap-3 border-b border-stone-900/20 pb-1.5 text-[9px] uppercase tracking-[0.24em] text-stone-600 sm:text-[10px]">
-      <span className="mag-serif font-bold tracking-[0.18em] text-stone-800">KRİMİSCAN GLOBAL</span>
+      <span className="mag-serif font-bold tracking-[0.18em] text-stone-800">OYİ GLOBAL</span>
       <span className="min-w-0 flex-1 truncate text-center">{center}</span>
       <span className="mag-serif">{folio ?? ""}</span>
     </div>
@@ -421,10 +417,13 @@ export function MagazineView({
           <span>{issue.year}</span>
         </div>
 
-        {/* Ana manşet */}
-        <h1 className="mag-serif mt-2 text-[clamp(1.9rem,6vw,3.1rem)] font-black leading-[0.95] tracking-tight text-stone-900">
-          KRİMİSCAN <span className="text-amber-700">GLOBAL</span>
-        </h1>
+        {/* Ana manşet — mühür rozetli logo */}
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <h1 className="mag-serif text-[clamp(1.9rem,6vw,3.1rem)] font-black leading-[0.95] tracking-tight text-stone-900">
+            OYİ <span className="text-amber-700">GLOBAL</span>
+          </h1>
+          <OyiMark className="h-12 w-12 shrink-0 sm:h-14 sm:w-14" />
+        </div>
         <div className="mt-1.5 flex items-center justify-between border-y-2 border-stone-900/80 py-1 text-[8px] font-bold uppercase tracking-[0.18em] text-stone-800 sm:text-[10px]">
           <span>
             Sayı {issue.no} · {issue.month} {issue.year}
@@ -542,7 +541,7 @@ export function MagazineView({
       {/* Künye */}
       <div className="mt-3 rounded-sm border border-stone-900/25 bg-stone-900/[0.05] p-2.5 text-[9.5px] leading-relaxed text-stone-700 sm:text-[10.5px]">
         <span className="font-bold uppercase tracking-[0.16em] text-stone-900">Künye — </span>
-        KrimiScan Global E-Dergi. {issue.year} yılı yayını; dünya genelinde{" "}
+        OYİ GLOBAL E-Dergi. {issue.year} yılı yayını; dünya genelinde{" "}
         <b>{findings.length}</b> konu derlenmiş, yapay zekâ ile Türkçeye çevrilmiş ve önem
         puanlaması yapılmıştır. Yayın Türü: Sürekli Güncellenen Dijital Baskı.
       </div>
@@ -677,6 +676,17 @@ export function MagazineView({
               <BookOpenText className="h-3.5 w-3.5" />
               Tam Oku
             </button>
+            {(f.commentCount ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => setReading(f)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-stone-900/25 px-2.5 text-[11px] font-semibold text-stone-700 transition-colors hover:bg-stone-900/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+                title="Okur yorumlarını oku"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                {f.commentCount} yorum
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -717,25 +727,9 @@ export function MagazineView({
         Bu Sayı Henüz Boş
       </h2>
       <p className="max-w-sm text-[13px] leading-relaxed text-stone-700">
-        Küresel taramayı başlattığınızda dünyanın {""}
-        dillerindeki olay yeri inceleme gelişmeleri toplanır, Türkçeleştirilir ve bu derginin
-        sayfalarına yerleşir.
+        Editör taraması tamamlandığında dünyanın dillerindeki olay yeri inceleme
+        gelişmeleri toplanır, Türkçeleştirilir ve bu derginin sayfalarına yerleşir.
       </p>
-      {onStartScan && (
-        <button
-          type="button"
-          onClick={onStartScan}
-          disabled={scanning}
-          className="inline-flex items-center gap-2 rounded-sm bg-stone-900 px-5 py-2.5 text-sm font-bold text-amber-50 transition-colors hover:bg-stone-800 disabled:opacity-60"
-        >
-          {scanning ? (
-            <Loader2 className="h-4 w-4 animate-spin text-amber-300" />
-          ) : (
-            <ScanSearch className="h-4 w-4 text-amber-300" />
-          )}
-          {scanning ? "Tarama sürüyor…" : "İlk Taramayı Başlat"}
-        </button>
-      )}
     </div>
   );
 
@@ -767,7 +761,7 @@ export function MagazineView({
   // ================= SAHNE =================
 
   return (
-    <section className="relative overflow-x-clip" aria-label="KrimiScan Global e-dergi">
+    <section className="relative overflow-x-clip" aria-label="OYİ GLOBAL e-dergi">
       {/* Üst kontrol şeridi */}
       <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-1 pb-3">
         <div className="flex min-w-0 items-center gap-2 text-xs text-slate-400">

@@ -1,5 +1,5 @@
 /**
- * KrimiScan Global — Olay Yeri İnceleme Teknikleri Küresel Tarama Konfigürasyonu
+ * OYİ GLOBAL — Olay Yeri İnceleme Teknikleri Küresel Tarama Konfigürasyonu
  * 14 dilde yerelleştirilmiş arama sorguları ve kategori sistemi
  */
 

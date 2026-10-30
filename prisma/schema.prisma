@@ -49,9 +49,23 @@ model Finding {
   notes           String?
   createdAt       DateTime  @default(now())
   scan            ScanRun?  @relation(fields: [scanId], references: [id], onDelete: SetNull)
+  comments        Comment[]
 
   @@index([category])
   @@index([language])
+  @@index([createdAt])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  findingId String
+  author    String   @default("Anonim Okur")
+  body      String
+  ip        String   @default("")
+  createdAt DateTime @default(now())
+  finding   Finding  @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@index([findingId])
   @@index([createdAt])
 }
 

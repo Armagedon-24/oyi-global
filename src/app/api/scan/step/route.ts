@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getLanguage, prettySourceName, type ScanLanguage } from "@/lib/forensics-config";
 import { searchWeb, translateAndClassifyBatch, type RawSearchItem, type TranslateInput } from "@/lib/llm";
 import { extractImagesFromArticle } from "@/lib/image-extract";
+import { requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -17,11 +18,14 @@ function isRelevant(item: RawSearchItem, lang: ScanLanguage): boolean {
 }
 
 /**
- * POST /api/scan/step
+ * POST /api/scan/step (yalnızca yönetici)
  * Body: { scanId, langCode, focusCategory? }
  * Bir dil için: arama → alaka filtresi → tekrar eleme → çeviri → kayıt
  */
 export async function POST(req: Request) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   try {
     const { scanId, langCode, focusCategory } = await req.json();
     const lang = getLanguage(langCode);

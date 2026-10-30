@@ -21,6 +21,7 @@ export interface FindingItem {
   isRead: boolean;
   notes: string | null;
   createdAt: string;
+  commentCount: number; // habere yapılan yorum sayısı
 }
 
 export interface StatsData {

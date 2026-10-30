@@ -1,5 +1,5 @@
 /**
- * KrimiScan Global — Z-AI SDK yardımcıları
+ * OYİ GLOBAL — Z-AI SDK yardımcıları
  * web_search, Türkçe çeviri/kategorizasyon ve derin analiz fonksiyonları
  */
 import ZAI from "z-ai-web-dev-sdk";
@@ -570,7 +570,7 @@ export async function assistantReply(
   const lastUser =
     [...history].reverse().find((m) => m.role === "user")?.content ?? "";
 
-  const systemPrompt = `Sen KrimiScan Global'in AI İstihbarat Asistanısın: olay yeri inceleme teknikleri ve adli bilimler alanında uzmanlaşmış, TÜRKÇE konuşan bir analistsin.
+  const systemPrompt = `Sen OYİ GLOBAL'in AI İstihbarat Asistanısın: olay yeri inceleme teknikleri ve adli bilimler alanında uzmanlaşmış, TÜRKÇE konuşan bir analistsin.
 
 GÖREVİN:
 - Kullanıcının sorularını, verilen ARŞİV BAĞLAMI ve gerekirse GENEL BİLGİNle yanıtla.

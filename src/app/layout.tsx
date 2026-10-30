@@ -14,20 +14,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KrimiScan Global — Olay Yeri İnceleme Teknikleri Küresel İzleme Merkezi",
+  title: "OYİ GLOBAL — Olay Yeri İnceleme Teknikleri Küresel İzleme Dergisi",
   description:
-    "Dünyanın 14 dilinde olay yeri inceleme teknikleri ve adli bilimler gelişmelerini tarayan, yapay zekâ ile Türkçeye çeviren profesyonel izleme sistemi.",
+    "Dünyanın 14 dilinde olay yeri inceleme teknikleri ve adli bilimler gelişmelerini tarayan, yapay zekâ ile Türkçeye çeviren dijital e-dergi.",
   keywords: [
     "olay yeri inceleme",
     "adli bilimler",
     "kriminalistik",
     "forensic science",
     "crime scene investigation",
+    "OYİ GLOBAL",
     "Türkçe",
   ],
-  authors: [{ name: "KrimiScan Global" }],
+  authors: [{ name: "OYİ GLOBAL" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/logo.svg",
   },
 };
 

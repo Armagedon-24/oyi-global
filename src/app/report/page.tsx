@@ -63,7 +63,7 @@ export default async function ReportPage() {
               </div>
               <div>
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight leading-tight">
-                  KRİMİSCAN <span className="text-amber-600">GLOBAL</span>
+                  OYİ <span className="text-amber-600">GLOBAL</span>
                 </h1>
                 <p className="text-xs text-slate-600 font-medium uppercase tracking-widest">
                   Olay Yeri İnceleme Teknikleri Küresel İzleme Merkezi

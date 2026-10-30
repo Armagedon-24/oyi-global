@@ -1,5 +1,5 @@
 /**
- * KrimiScan Global — Makale görseli çıkarma
+ * OYİ GLOBAL — Makale görseli çıkarma
  * Haber makalelerinden fotoğraf/şekil/çizim/diyagram URL'lerini toplar:
  *  1) og:image / twitter:image meta etiketleri (öncelikli — kapak görseli)
  *  2) <img> etiketleri (src, data-src, lazyload varyantları, srcset içindeki en büyük aday)

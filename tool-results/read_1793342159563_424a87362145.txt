@@ -1,0 +1,976 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * KrimiScan Global — E-Dergi Görünümü
+     5→ * Bulguları dergi sayfaları halinde sunar: Kapak → İçindekiler → Makale sayfaları.
+     6→ * Sayfa geçişlerinde 3D sayfa çevirme (page-flip) animasyonu kullanır.
+     7→ */
+     8→
+     9→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+    10→import {
+    11→  Bookmark,
+    12→  BookOpenText,
+    13→  ChevronLeft,
+    14→  ChevronRight,
+    15→  ExternalLink,
+    16→  Fingerprint,
+    17→  Images as ImagesIcon,
+    18→  Loader2,
+    19→  ScanSearch,
+    20→  Sparkles,
+    21→  Star,
+    22→} from "lucide-react";
+    23→import { categoryLabel, getLanguage } from "@/lib/forensics-config";
+    24→import { imgProxyUrl, parseFindingImages } from "@/lib/image-utils";
+    25→import type { FindingItem } from "@/lib/types";
+    26→import { FullReadDialog } from "@/components/forensics/full-read-dialog";
+    27→
+    28→const MAX_ARTICLES = 12;
+    29→const FLIP_MS = 1120;
+    30→
+    31→/** Köşeden sürükleme durumu — sayfa parmağı izler */
+    32→interface DragState {
+    33→  dir: "next" | "prev";
+    34→  from: number;
+    35→  to: number;
+    36→  p: number; // 0..1 çevirme ilerlemesi
+    37→  settling: "commit" | "back" | null;
+    38→}
+    39→
+    40→/** Sürükleme ilerlemesine göre yaprağın bükülmüş (esneyen) transform'u */
+    41→function leafTransform(ds: { dir: "next" | "prev"; p: number }): string {
+    42→  const bend = Math.sin(Math.PI * ds.p); // ortada en çok esner
+    43→  const angle = ds.dir === "next" ? -ds.p * 180 : -(1 - ds.p) * 180;
+    44→  const rz = (ds.dir === "next" ? 1 : -1) * bend * 2.8;
+    45→  const tx = (ds.dir === "next" ? 1 : -1) * bend * 0.5;
+    46→  const ty = -bend * 1.3;
+    47→  const sx = 1 - bend * 0.045;
+    48→  const sy = 1 + bend * 0.028;
+    49→  return `rotateY(${angle.toFixed(2)}deg) rotateZ(${rz.toFixed(2)}deg) translate3d(${tx.toFixed(2)}%, ${ty.toFixed(2)}%, 0) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
+    50→}
+    51→
+    52→/** Sürüklemede dış yarı yaprağın faz farkıyla katlanması (kâğıt kırışması) */
+    53→function foldTransform(ds: { p: number }): string {
+    54→  const bend = Math.sin(Math.PI * ds.p);
+    55→  return `rotateY(${(-bend * 34).toFixed(2)}deg)`;
+    56→}
+    57→
+    58→type MagPage =
+    59→  | { kind: "cover"; featured: FindingItem; secondary: FindingItem[]; totalCount: number }
+    60→  | { kind: "toc"; entries: { f: FindingItem; folio: number }[] }
+    61→  | { kind: "article"; f: FindingItem; folio: number; n: number }
+    62→  | { kind: "empty" };
+    63→
+    64→interface MagazineViewProps {
+    65→  findings: FindingItem[];
+    66→  loading: boolean;
+    67→  scanning?: boolean;
+    68→  onStartScan?: () => void;
+    69→  onToggleBookmark: (f: FindingItem) => void;
+    70→}
+    71→
+    72→function formatDate(s: string | null): string | null {
+    73→  if (!s) return null;
+    74→  const d = new Date(s);
+    75→  if (isNaN(d.getTime())) return null;
+    76→  return d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
+    77→}
+    78→
+    79→function parseKeywords(raw: string): string[] {
+    80→  try {
+    81→    const arr = JSON.parse(raw);
+    82→    return Array.isArray(arr) ? arr.slice(0, 5) : [];
+    83→  } catch {
+    84→    return [];
+    85→  }
+    86→}
+    87→
+    88→function clip(text: string, max: number): string {
+    89→  if (text.length <= max) return text;
+    90→  const cut = text.slice(0, max);
+    91→  return cut.replace(/\s+\S*$/, "") + "…";
+    92→}
+    93→
+    94→/** Öne çıkan görseli döndürür (proxy adresiyle) */
+    95→function coverImage(f: FindingItem) {
+    96→  const imgs = parseFindingImages(f.images);
+    97→  return imgs.length > 0 ? imgs[0] : null;
+    98→}
+    99→
+   100→export function MagazineView({
+   101→  findings,
+   102→  loading,
+   103→  scanning,
+   104→  onStartScan,
+   105→  onToggleBookmark,
+   106→}: MagazineViewProps) {
+   107→  const [page, setPage] = useState(0);
+   108→  const [flip, setFlip] = useState<{ dir: "next" | "prev"; from: number; to: number } | null>(null);
+   109→  const [drag, setDrag] = useState<DragState | null>(null);
+   110→  const [reading, setReading] = useState<FindingItem | null>(null);
+   111→  const flipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+   112→  const touchX = useRef<number | null>(null);
+   113→  const frameRef = useRef<HTMLDivElement | null>(null);
+   114→  const leafRef = useRef<HTMLDivElement | null>(null);
+   115→  const foldRef = useRef<HTMLDivElement | null>(null);
+   116→  const dragRef = useRef<DragState | null>(null);
+   117→  const dragStartX = useRef(0);
+   118→  const dragWidth = useRef(640);
+   119→  const dragMoved = useRef(false);
+   120→  const lastDragAt = useRef(0);
+   121→
+   122→  // ---- Sayı bilgisi (dergi künyesi) ----
+   123→  const issue = useMemo(() => {
+   124→    const now = new Date();
+   125→    const month = now.toLocaleDateString("tr-TR", { month: "long" }).toLocaleUpperCase("tr-TR");
+   126→    const no = (now.getFullYear() - 2024) * 12 + now.getMonth() + 1;
+   127→    return { month, no, year: now.getFullYear() };
+   128→  }, []);
+   129→
+   130→  // ---- Sayfa modeli ----
+   131→  const articles = useMemo(() => findings.slice(0, MAX_ARTICLES), [findings]);
+   132→
+   133→  const pages = useMemo<MagPage[]>(() => {
+   134→    if (articles.length === 0) return [{ kind: "empty" }];
+   135→    let featIdx = articles.findIndex((a) => coverImage(a) !== null);
+   136→    if (featIdx < 0) featIdx = 0;
+   137→    const featured = articles[featIdx];
+   138→    const secondary = articles.filter((a) => a.id !== featured.id).slice(0, 3);
+   139→    const tocEntries = articles.map((f, i) => ({ f, folio: i + 2 }));
+   140→    return [
+   141→      { kind: "cover", featured, secondary, totalCount: findings.length },
+   142→      { kind: "toc", entries: tocEntries },
+   143→      ...articles.map((f, i) => ({ kind: "article" as const, f, folio: i + 2, n: i + 1 })),
+   144→    ];
+   145→  }, [articles, findings.length]);
+   146→
+   147→  const totalPages = pages.length;
+   148→
+   149→  // Filtre değişince sayfa taşarsa başa dön
+   150→  useEffect(() => {
+   151→    if (page > totalPages - 1) setPage(Math.max(0, totalPages - 1));
+   152→  }, [totalPages, page]);
+   153→
+   154→  useEffect(
+   155→    () => () => {
+   156→      if (flipTimer.current) clearTimeout(flipTimer.current);
+   157→    },
+   158→    []
+   159→  );
+   160→
+   161→  // ---- Sayfa çevirme motoru ----
+   162→  const goTo = useCallback(
+   163→    (target: number, dir?: "next" | "prev") => {
+   164→      if (flip || dragRef.current) return;
+   165→      const clamped = Math.max(0, Math.min(totalPages - 1, target));
+   166→      if (clamped === page) return;
+   167→      const d: "next" | "prev" = dir ?? (clamped > page ? "next" : "prev");
+   168→      setFlip({ dir: d, from: page, to: clamped });
+   169→      setPage(clamped);
+   170→      if (flipTimer.current) clearTimeout(flipTimer.current);
+   171→      flipTimer.current = setTimeout(() => setFlip(null), FLIP_MS + 40);
+   172→    },
+   173→    [flip, page, totalPages]
+   174→  );
+   175→
+   176→  const goNext = useCallback(() => goTo(page + 1, "next"), [goTo, page]);
+   177→  const goPrev = useCallback(() => goTo(page - 1, "prev"), [goTo, page]);
+   178→
+   179→  // Klavye ile gezinme (form alanları hariç)
+   180→  useEffect(() => {
+   181→    const onKey = (e: KeyboardEvent) => {
+   182→      const tag = (e.target as HTMLElement | null)?.tagName;
+   183→      if (tag && ["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+   184→      if (reading || flip || dragRef.current) return;
+   185→      if (e.key === "ArrowRight") goNext();
+   186→      else if (e.key === "ArrowLeft") goPrev();
+   187→    };
+   188→    window.addEventListener("keydown", onKey);
+   189→    return () => window.removeEventListener("keydown", onKey);
+   190→  }, [goNext, goPrev, reading, flip]);
+   191→
+   192→  // Dokunmatik kaydırma
+   193→  const onTouchStart = (e: React.TouchEvent) => {
+   194→    touchX.current = e.touches[0].clientX;
+   195→  };
+   196→  const onTouchEnd = (e: React.TouchEvent) => {
+   197→    if (Date.now() - lastDragAt.current < 500) return; // köşe sürüklemesiyle çakışmasın
+   198→    if (touchX.current === null) return;
+   199→    const delta = e.changedTouches[0].clientX - touchX.current;
+   200→    touchX.current = null;
+   201→    if (delta < -48) goNext();
+   202→    else if (delta > 48) goPrev();
+   203→  };
+   204→
+   205→  // ---- Köşeden tutup sürükleyerek çevirme (sayfa el ile çevriliyormuş hissi) ----
+   206→  const onEarPointerDown = (dir: "next" | "prev") => (e: React.PointerEvent<HTMLButtonElement>) => {
+   207→    if (flip || dragRef.current || reading || loading) return;
+   208→    if (dir === "next" ? page >= totalPages - 1 : page === 0) return;
+   209→    e.preventDefault();
+   210→    try {
+   211→      e.currentTarget.setPointerCapture(e.pointerId);
+   212→    } catch {
+   213→      /* capture opsiyonel */
+   214→    }
+   215→    const frame = frameRef.current;
+   216→    dragWidth.current = frame ? frame.getBoundingClientRect().width : 640;
+   217→    dragStartX.current = e.clientX;
+   218→    dragMoved.current = false;
+   219→    lastDragAt.current = Date.now();
+   220→    const ds: DragState = { dir, from: page, to: dir === "next" ? page + 1 : page - 1, p: 0, settling: null };
+   221→    dragRef.current = ds;
+   222→    setDrag(ds);
+   223→  };
+   224→
+   225→  const dragging = drag !== null;
+   226→  useEffect(() => {
+   227→    if (!dragging) return;
+   228→    let raf = 0;
+   229→    let pendingX = 0;
+   230→    const applyMove = () => {
+   231→      raf = 0;
+   232→      const ds = dragRef.current;
+   233→      if (!ds || ds.settling) return;
+   234→      const raw = ds.dir === "next" ? dragStartX.current - pendingX : pendingX - dragStartX.current;
+   235→      if (Math.abs(raw) > 6) dragMoved.current = true;
+   236→      const p = Math.max(0, Math.min(1, raw / (dragWidth.current * 0.72)));
+   237→      if (p === ds.p) return;
+   238→      const next = { ...ds, p };
+   239→      dragRef.current = next;
+   240→      setDrag(next);
+   241→    };
+   242→    const onMove = (e: PointerEvent) => {
+   243→      pendingX = e.clientX;
+   244→      if (!raf) raf = requestAnimationFrame(applyMove);
+   245→    };
+   246→    const finish = (el: HTMLDivElement | null, ds: DragState, commit: boolean) => {
+   247→      // Hareketsiz bırakma = tıklama; çevirme işini click olayına bırak
+   248→      if (!dragMoved.current) {
+   249→        dragRef.current = null;
+   250→        setDrag(null);
+   251→        return;
+   252→      }
+   253→      lastDragAt.current = Date.now();
+   254→      const settled: DragState = { ...ds, settling: commit ? "commit" : "back" };
+   255→      dragRef.current = settled;
+   256→      setDrag(settled);
+   257→      let fired = false;
+   258→      const done = () => {
+   259→        if (fired) return;
+   260→        fired = true;
+   261→        if (commit) setPage(ds.to);
+   262→        setDrag(null);
+   263→        dragRef.current = null;
+   264→      };
+   265→      if (!el) {
+   266→        done();
+   267→        return;
+   268→      }
+   269→      const current = leafTransform(ds);
+   270→      let kf: Keyframe[];
+   271→      let dur: number;
+   272→      if (commit) {
+   273→        dur = 400;
+   274→        kf =
+   275→          ds.dir === "next"
+   276→            ? [
+   277→                { transform: current, offset: 0 },
+   278→                { transform: "rotateY(-169deg) rotateZ(1.5deg) scale(0.99, 1.012)", offset: 0.55 },
+   279→                { transform: "rotateY(-181.5deg) rotateZ(0deg)", offset: 0.88 },
+   280→                { transform: "rotateY(-180deg) rotateZ(0deg) translate3d(0,0,0) scale(1,1)", offset: 1 },
+   281→              ]
+   282→            : [
+   283→                { transform: current, offset: 0 },
+   284→                { transform: "rotateY(-8.5deg) rotateZ(-1.5deg) scale(0.99, 1.012)", offset: 0.55 },
+   285→                { transform: "rotateY(1.5deg) rotateZ(0deg)", offset: 0.88 },
+   286→                { transform: "rotateY(0deg) rotateZ(0deg) translate3d(0,0,0) scale(1,1)", offset: 1 },
+   287→              ];
+   288→      } else {
+   289→        dur = 520;
+   290→        kf =
+   291→          ds.dir === "next"
+   292→            ? [
+   293→                { transform: current, offset: 0 },
+   294→                { transform: "rotateY(7deg) rotateZ(-1.6deg)", offset: 0.55 },
+   295→                { transform: "rotateY(-2.5deg) rotateZ(0.6deg)", offset: 0.82 },
+   296→                { transform: "rotateY(0deg) rotateZ(0deg) translate3d(0,0,0) scale(1,1)", offset: 1 },
+   297→              ]
+   298→            : [
+   299→                { transform: current, offset: 0 },
+   300→                { transform: "rotateY(-187deg) rotateZ(1.6deg)", offset: 0.55 },
+   301→                { transform: "rotateY(-177.5deg) rotateZ(-0.6deg)", offset: 0.82 },
+   302→                { transform: "rotateY(-180deg) rotateZ(0deg) translate3d(0,0,0) scale(1,1)", offset: 1 },
+   303→              ];
+   304→      }
+   305→      try {
+   306→        const anim = el.animate(kf, {
+   307→          duration: dur,
+   308→          easing: "cubic-bezier(0.34, 0.9, 0.34, 1)",
+   309→          fill: "forwards",
+   310→        });
+   311→        anim.finished.then(done).catch(done);
+   312→      } catch {
+   313→        done();
+   314→      }
+   315→      // Dış yarı (katlama) yaprakla birlikte eşzamanlı oturur — kâğıt bükülmesi
+   316→      const foldEl = foldRef.current;
+   317→      if (foldEl) {
+   318→        const foldCurrent = foldTransform(ds);
+   319→        const foldKf: Keyframe[] = commit
+   320→          ? [
+   321→              { transform: foldCurrent, offset: 0 },
+   322→              { transform: "rotateY(-15deg)", offset: 0.5 },
+   323→              { transform: "rotateY(0deg)", offset: 1 },
+   324→            ]
+   325→          : [
+   326→              { transform: foldCurrent, offset: 0 },
+   327→              { transform: "rotateY(-24deg)", offset: 0.5 },
+   328→              { transform: "rotateY(0deg)", offset: 1 },
+   329→            ];
+   330→        try {
+   331→          foldEl.animate(foldKf, {
+   332→            duration: dur,
+   333→            easing: "cubic-bezier(0.34, 0.9, 0.34, 1)",
+   334→            fill: "forwards",
+   335→          });
+   336→        } catch {
+   337→          /* katlama animasyonu opsiyonel */
+   338→        }
+   339→      }
+   340→    };
+   341→    const onUp = () => {
+   342→      const ds = dragRef.current;
+   343→      if (!ds || ds.settling) return;
+   344→      finish(leafRef.current, ds, ds.p >= 0.34);
+   345→    };
+   346→    const onCancel = () => {
+   347→      const ds = dragRef.current;
+   348→      if (!ds || ds.settling) return;
+   349→      finish(leafRef.current, ds, false);
+   350→    };
+   351→    window.addEventListener("pointermove", onMove, { passive: true });
+   352→    window.addEventListener("pointerup", onUp);
+   353→    window.addEventListener("pointercancel", onCancel);
+   354→    return () => {
+   355→      if (raf) cancelAnimationFrame(raf);
+   356→      window.removeEventListener("pointermove", onMove);
+   357→      window.removeEventListener("pointerup", onUp);
+   358→      window.removeEventListener("pointercancel", onCancel);
+   359→    };
+   360→  }, [dragging]);
+   361→
+   362→  // ---- Sayfa etiketi ----
+   363→  const pageLabel = useMemo(() => {
+   364→    const p = pages[page];
+   365→    if (!p) return "";
+   366→    if (p.kind === "cover") return "Kapak";
+   367→    if (p.kind === "toc") return "İçindekiler";
+   368→    if (p.kind === "empty") return "Boş Sayı";
+   369→    return `Sayfa ${p.folio}`;
+   370→  }, [pages, page]);
+   371→
+   372→  // ---- Çevirme/sürükleme sırasında sahnede duracak sayfa ----
+   373→  const staticIndex = drag
+   374→    ? drag.dir === "next"
+   375→      ? drag.to
+   376→      : drag.from
+   377→    : flip
+   378→      ? flip.dir === "next"
+   379→        ? flip.to
+   380→        : flip.from
+   381→      : page;
+   382→  const leafIndex = drag
+   383→    ? drag.dir === "next"
+   384→      ? drag.from
+   385→      : drag.to
+   386→    : flip
+   387→      ? flip.dir === "next"
+   388→        ? flip.from
+   389→        : flip.to
+   390→      : -1;
+   391→
+   392→  // ================= SAYFA ŞABLONLARI =================
+   393→
+   394→  const renderRunningHead = (center: string, folio?: number) => (
+   395→    <div className="flex items-center justify-between gap-3 border-b border-stone-900/20 pb-1.5 text-[9px] uppercase tracking-[0.24em] text-stone-600 sm:text-[10px]">
+   396→      <span className="mag-serif font-bold tracking-[0.18em] text-stone-800">KRİMİSCAN GLOBAL</span>
+   397→      <span className="min-w-0 flex-1 truncate text-center">{center}</span>
+   398→      <span className="mag-serif">{folio ?? ""}</span>
+   399→    </div>
+   400→  );
+   401→
+   402→  const renderStars = (importance: number, size = "h-2.5 w-2.5") => (
+   403→    <span className="inline-flex items-center gap-0.5" title={`Önem puanı: ${importance}/5`}>
+   404→      {Array.from({ length: 5 }).map((_, i) => (
+   405→        <Star
+   406→          key={i}
+   407→          className={`${size} ${i < importance ? "fill-amber-700 text-amber-700" : "text-stone-400"}`}
+   408→        />
+   409→      ))}
+   410→    </span>
+   411→  );
+   412→
+   413→  const renderCover = (p: Extract<MagPage, { kind: "cover" }>) => {
+   414→    const featImg = coverImage(p.featured);
+   415→    return (
+   416→      <div className="mag-page-content flex h-full flex-col px-4 pb-4 pt-4 sm:px-7 sm:pb-6 sm:pt-6">
+   417→        {/* Üst şerit */}
+   418→        <div className="flex items-center justify-between border-b border-stone-900/25 pb-1.5 text-[8px] uppercase tracking-[0.2em] text-stone-700 sm:text-[9px]">
+   419→          <span>Adli Bilimler & Olay Yeri İncelemesi</span>
+   420→          <span className="hidden sm:inline">Türkiyenin Küresel İzleme Dergisi</span>
+   421→          <span>{issue.year}</span>
+   422→        </div>
+   423→
+   424→        {/* Ana manşet */}
+   425→        <h1 className="mag-serif mt-2 text-[clamp(1.9rem,6vw,3.1rem)] font-black leading-[0.95] tracking-tight text-stone-900">
+   426→          KRİMİSCAN <span className="text-amber-700">GLOBAL</span>
+   427→        </h1>
+   428→        <div className="mt-1.5 flex items-center justify-between border-y-2 border-stone-900/80 py-1 text-[8px] font-bold uppercase tracking-[0.18em] text-stone-800 sm:text-[10px]">
+   429→          <span>
+   430→            Sayı {issue.no} · {issue.month} {issue.year}
+   431→          </span>
+   432→          <span className="text-red-800">{p.totalCount} konu tarandı</span>
+   433→          <span>Ücretsiz E-Dergi</span>
+   434→        </div>
+   435→
+   436→        {/* Kapak görseli — tıklayınca tam makale okuma penceresi */}
+   437→        <button
+   438→          type="button"
+   439→          onClick={() => setReading(p.featured)}
+   440→          className="group relative mt-3 block w-full overflow-hidden rounded-sm border border-stone-900/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+   441→          title="Kapak haberini Tam Oku ile oku"
+   442→        >
+   443→          {featImg ? (
+   444→            /* eslint-disable-next-line @next/next/no-img-element */
+   445→            <img
+   446→              src={imgProxyUrl(featImg.url)}
+   447→              alt={featImg.alt || p.featured.trTitle}
+   448→              className="h-[clamp(140px,26vh,270px)] w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+   449→              onError={(e) => (e.currentTarget.style.visibility = "hidden")}
+   450→            />
+   451→          ) : (
+   452→            <div className="flex h-[clamp(120px,20vh,220px)] w-full items-center justify-center bg-stone-900/[0.06]">
+   453→              <Fingerprint className="h-12 w-12 text-stone-400" />
+   454→            </div>
+   455→          )}
+   456→          <span className="mag-tag-red absolute left-2 top-2">Kapak Haberi</span>
+   457→        </button>
+   458→
+   459→        {/* Kapak başlığı */}
+   460→        <h2 className="mag-serif mt-3 line-clamp-3 text-[clamp(1.05rem,2.9vw,1.65rem)] font-bold leading-tight text-stone-900">
+   461→          {p.featured.trTitle}
+   462→        </h2>
+   463→        <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-stone-700 sm:text-[13px]">
+   464→          {clip(p.featured.trSummary, 210)}
+   465→        </p>
+   466→
+   467→        {/* Yan başlıklar şeridi */}
+   468→        <div className="mt-auto grid grid-cols-3 gap-3 border-t border-stone-900/20 pt-3">
+   469→          {p.secondary.map((s) => {
+   470→            const sImg = coverImage(s);
+   471→            return (
+   472→              <button
+   473→                key={s.id}
+   474→                type="button"
+   475→                onClick={() => setReading(s)}
+   476→                className="group text-left focus:outline-none"
+   477→                title="Tam Oku ile aç"
+   478→              >
+   479→                <span className="mag-kicker block !text-[8px] sm:!text-[9px]">
+   480→                  {categoryLabel(s.category).split(" ")[0]}
+   481→                </span>
+   482→                <span className="mag-serif mt-1 line-clamp-3 block text-[11px] font-semibold leading-snug text-stone-900 group-hover:text-amber-800 sm:text-[12.5px]">
+   483→                  {s.trTitle}
+   484→                </span>
+   485→                {sImg && (
+   486→                  /* eslint-disable-next-line @next/next/no-img-element */
+   487→                  <img
+   488→                    src={imgProxyUrl(sImg.url)}
+   489→                    alt=""
+   490→                    loading="lazy"
+   491→                    className="mt-1 h-10 w-full rounded-sm object-cover opacity-90 group-hover:opacity-100 sm:h-12"
+   492→                    onError={(e) => (e.currentTarget.style.display = "none")}
+   493→                  />
+   494→                )}
+   495→              </button>
+   496→            );
+   497→          })}
+   498→        </div>
+   499→      </div>
+   500→    );
+   501→  };
+   502→
+   503→  const renderToc = (p: Extract<MagPage, { kind: "toc" }>) => (
+   504→    <div className="mag-page-content flex h-full flex-col px-4 pb-4 pt-4 sm:px-7 sm:pb-6 sm:pt-6">
+   505→      {renderRunningHead("Bu Sayıda")}
+   506→      <div className="mt-3 flex items-baseline justify-between">
+   507→        <h2 className="mag-serif text-[clamp(1.4rem,4vw,2.2rem)] font-black tracking-tight text-stone-900">
+   508→          İçindekiler
+   509→        </h2>
+   510→        <span className="text-[9px] uppercase tracking-[0.2em] text-stone-600">
+   511→          Sayı {issue.no} · {issue.month}
+   512→        </span>
+   513→      </div>
+   514→      <hr className="mag-rule mt-2" />
+   515→
+   516→      <div className="no-scrollbar mt-1 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+   517→        {p.entries.map((e, i) => (
+   518→          <button
+   519→            key={e.f.id}
+   520→            type="button"
+   521→            onClick={() => goTo(i + 2, "next")}
+   522→            className="group flex w-full items-baseline gap-2.5 rounded-sm border-b border-dotted border-stone-500/50 py-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-700"
+   523→          >
+   524→            <span className="mag-serif w-7 shrink-0 text-right text-base font-bold text-amber-800 sm:text-lg">
+   525→              {String(i + 1).padStart(2, "0")}
+   526→            </span>
+   527→            <span className="min-w-0 flex-1">
+   528→              <span className="block text-[8px] font-bold uppercase tracking-[0.18em] text-red-900/80 sm:text-[9px]">
+   529→                {categoryLabel(e.f.category)}
+   530→              </span>
+   531→              <span className="mag-serif line-clamp-1 block text-[13px] font-semibold leading-snug text-stone-900 group-hover:text-amber-800 sm:text-[15px]">
+   532→                {e.f.trTitle}
+   533→              </span>
+   534→            </span>
+   535→            <span className="mag-serif shrink-0 text-sm font-bold text-stone-700 group-hover:text-amber-800">
+   536→              {e.folio}
+   537→            </span>
+   538→          </button>
+   539→        ))}
+   540→      </div>
+   541→
+   542→      {/* Künye */}
+   543→      <div className="mt-3 rounded-sm border border-stone-900/25 bg-stone-900/[0.05] p-2.5 text-[9.5px] leading-relaxed text-stone-700 sm:text-[10.5px]">
+   544→        <span className="font-bold uppercase tracking-[0.16em] text-stone-900">Künye — </span>
+   545→        KrimiScan Global E-Dergi. {issue.year} yılı yayını; dünya genelinde{" "}
+   546→        <b>{findings.length}</b> konu derlenmiş, yapay zekâ ile Türkçeye çevrilmiş ve önem
+   547→        puanlaması yapılmıştır. Yayın Türü: Sürekli Güncellenen Dijital Baskı.
+   548→      </div>
+   549→    </div>
+   550→  );
+   551→
+   552→  const renderArticle = (p: Extract<MagPage, { kind: "article" }>) => {
+   553→    const f = p.f;
+   554→    const img = coverImage(f);
+   555→    const keywords = parseKeywords(f.keywords);
+   556→    const langInfo = getLanguage(f.language);
+   557→    const date = formatDate(f.publishedDate);
+   558→    const body = f.trSummary && f.trSummary.trim().length > 0
+   559→      ? clip(f.trSummary.trim(), 860)
+   560→      : "Bu haber için Türkçe özet metni bu baskıda yer almıyor. Derin analiz panelinden yapay zekâ değerlendirmesini okuyabilir veya orijinal kaynağa gidebilirsiniz.";
+   561→
+   562→    return (
+   563→      <div className="mag-page-content flex h-full flex-col px-4 pb-4 pt-4 sm:px-7 sm:pb-5 sm:pt-5">
+   564→        {renderRunningHead(categoryLabel(f.category), p.folio)}
+   565→
+   566→        {/* Kicker satırı */}
+   567→        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+   568→          <span className="mag-kicker">{categoryLabel(f.category)}</span>
+   569→          {f.isNewTech && (
+   570→            <span className="mag-tag-red inline-flex items-center gap-1">
+   571→              <Sparkles className="h-2.5 w-2.5" /> Yenilik
+   572→            </span>
+   573→          )}
+   574→          {renderStars(f.importance)}
+   575→          {parseFindingImages(f.images).length > 1 && (
+   576→            <span className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-stone-600">
+   577→              <ImagesIcon className="h-3 w-3" /> {parseFindingImages(f.images).length} görsel
+   578→            </span>
+   579→          )}
+   580→        </div>
+   581→
+   582→        {/* Başlık + spot */}
+   583→        <h2 className="mag-serif mt-1.5 line-clamp-3 text-[clamp(1.15rem,3.2vw,1.85rem)] font-bold leading-[1.12] tracking-tight text-stone-900">
+   584→          {f.trTitle}
+   585→        </h2>
+   586→
+   587→        {/* Künye satırı (byline) */}
+   588→        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] uppercase tracking-[0.14em] text-stone-600 sm:text-[10px]">
+   589→          <span className="font-bold text-stone-900">{f.sourceName}</span>
+   590→          <span aria-hidden>·</span>
+   591→          <span>{langInfo ? `${langInfo.flag} ${langInfo.name}` : f.language.toUpperCase()}</span>
+   592→          {date && (
+   593→            <>
+   594→              <span aria-hidden>·</span>
+   595→              <span>{date}</span>
+   596→            </>
+   597→          )}
+   598→          <span aria-hidden>·</span>
+   599→          <span className="italic normal-case tracking-normal text-stone-600">
+   600→            yapay zekâ ile Türkçeleştirilmiştir
+   601→          </span>
+   602→        </div>
+   603→
+   604→        {/* Makale görseli */}
+   605→        {img && (
+   606→          <figure className="mt-2.5">
+   607→            {/* eslint-disable-next-line @next/next/no-img-element */}
+   608→            <img
+   609→              src={imgProxyUrl(img.url)}
+   610→              alt={img.alt || f.trTitle}
+   611→              loading="lazy"
+   612→              className="h-[clamp(110px,21vh,215px)] w-full border border-stone-900/25 object-cover"
+   613→              onError={(e) => (e.currentTarget.style.display = "none")}
+   614→            />
+   615→            {(img.alt || f.originalTitle) && (
+   616→              <figcaption className="mag-serif mt-1 truncate text-[9.5px] italic text-stone-600 sm:text-[10.5px]">
+   617→                {img.alt || f.originalTitle}
+   618→              </figcaption>
+   619→            )}
+   620→          </figure>
+   621→        )}
+   622→
+   623→        {/* Gövde — iki kolon, baş harf süslü */}
+   624→        <div className="mag-body mt-2.5 flex min-h-0 flex-1 flex-col overflow-hidden">
+   625→          <p className="mag-cols mag-serif columns-1 text-[11.5px] leading-[1.62] text-stone-800 sm:columns-2 sm:text-[12.5px]">
+   626→            <span className="mag-dropcap block">{body}</span>
+   627→          </p>
+   628→          {(f.trSummary?.trim().length ?? 0) > 860 && (
+   629→            <button
+   630→              type="button"
+   631→              onClick={() => setReading(f)}
+   632→              className="mag-serif mx-auto mt-1 block text-[10px] italic text-amber-800 underline underline-offset-2 transition-colors hover:text-amber-950 sm:text-[10.5px]"
+   633→            >
+   634→              Metnin tamamı bu sayfaya sığmadı — Tam Oku ile büyük açın →
+   635→            </button>
+   636→          )}
+   637→          {/* Baskı sonu işareti */}
+   638→          <div className="mt-auto flex items-center justify-center gap-2 pt-2 text-stone-500" aria-hidden>
+   639→            <span className="h-px w-10 bg-stone-500/50" />
+   640→            <span className="text-[10px]">◆</span>
+   641→            <span className="h-px w-10 bg-stone-500/50" />
+   642→          </div>
+   643→          {/* Kişisel not — kenar notu */}
+   644→          {f.notes && (
+   645→            <div className="mt-2 rounded-sm border-l-2 border-amber-700 bg-amber-100/50 px-2.5 py-1.5 text-[10.5px] italic leading-snug text-stone-800">
+   646→              <b className="not-italic">Okur Notu:</b> {clip(f.notes, 160)}
+   647→            </div>
+   648→          )}
+   649→        </div>
+   650→
+   651→        {/* Anahtar kavramlar */}
+   652→        {keywords.length > 0 && (
+   653→          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+   654→            <span className="text-[8.5px] font-bold uppercase tracking-[0.2em] text-stone-600">
+   655→              Anahtar:
+   656→            </span>
+   657→            {keywords.map((kw, i) => (
+   658→              <span
+   659→                key={i}
+   660→                className="rounded-sm border border-stone-900/25 px-1.5 py-0.5 text-[9px] font-medium text-stone-700 sm:text-[9.5px]"
+   661→              >
+   662→                {kw}
+   663→              </span>
+   664→            ))}
+   665→          </div>
+   666→        )}
+   667→
+   668→        {/* Sayfa içi eylemler */}
+   669→        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-stone-900/20 pt-2.5">
+   670→          <div className="flex items-center gap-1.5">
+   671→            <button
+   672→              type="button"
+   673→              onClick={() => setReading(f)}
+   674→              className="inline-flex items-center gap-1.5 rounded-sm border-2 border-stone-900 px-3 py-[5px] text-[11px] font-bold text-stone-900 transition-colors hover:bg-stone-900 hover:text-amber-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+   675→              title="Makalenin tamamını büyük okuma penceresinde aç"
+   676→            >
+   677→              <BookOpenText className="h-3.5 w-3.5" />
+   678→              Tam Oku
+   679→            </button>
+   680→          </div>
+   681→          <div className="flex items-center gap-1.5">
+   682→            <button
+   683→              type="button"
+   684→              onClick={() => onToggleBookmark(f)}
+   685→              className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-[11px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 ${
+   686→                f.bookmarked
+   687→                  ? "border-amber-700/60 bg-amber-100/60 text-amber-800"
+   688→                  : "border-stone-900/25 text-stone-700 hover:bg-stone-900/10"
+   689→              }`}
+   690→              title={f.bookmarked ? "Yer iminden çıkar" : "Yer imine ekle"}
+   691→            >
+   692→              <Bookmark className={`h-3.5 w-3.5 ${f.bookmarked ? "fill-amber-700" : ""}`} />
+   693→              <span className="hidden sm:inline">{f.bookmarked ? "İşaretli" : "İşaretle"}</span>
+   694→            </button>
+   695→            <a
+   696→              href={f.url}
+   697→              target="_blank"
+   698→              rel="noopener noreferrer"
+   699→              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-stone-900/25 px-2.5 text-[11px] font-semibold text-stone-700 transition-colors hover:bg-stone-900/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
+   700→              title="Orijinal makaleyi aç"
+   701→            >
+   702→              <ExternalLink className="h-3.5 w-3.5" />
+   703→              <span className="hidden md:inline">Kaynak</span>
+   704→            </a>
+   705→          </div>
+   706→        </div>
+   707→      </div>
+   708→    );
+   709→  };
+   710→
+   711→  const renderEmpty = () => (
+   712→    <div className="mag-page-content flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
+   713→      <div className="rounded-full border border-stone-900/25 p-5">
+   714→        <Fingerprint className="h-10 w-10 text-stone-500" />
+   715→      </div>
+   716→      <h2 className="mag-serif text-2xl font-black tracking-tight text-stone-900">
+   717→        Bu Sayı Henüz Boş
+   718→      </h2>
+   719→      <p className="max-w-sm text-[13px] leading-relaxed text-stone-700">
+   720→        Küresel taramayı başlattığınızda dünyanın {""}
+   721→        dillerindeki olay yeri inceleme gelişmeleri toplanır, Türkçeleştirilir ve bu derginin
+   722→        sayfalarına yerleşir.
+   723→      </p>
+   724→      {onStartScan && (
+   725→        <button
+   726→          type="button"
+   727→          onClick={onStartScan}
+   728→          disabled={scanning}
+   729→          className="inline-flex items-center gap-2 rounded-sm bg-stone-900 px-5 py-2.5 text-sm font-bold text-amber-50 transition-colors hover:bg-stone-800 disabled:opacity-60"
+   730→        >
+   731→          {scanning ? (
+   732→            <Loader2 className="h-4 w-4 animate-spin text-amber-300" />
+   733→          ) : (
+   734→            <ScanSearch className="h-4 w-4 text-amber-300" />
+   735→          )}
+   736→          {scanning ? "Tarama sürüyor…" : "İlk Taramayı Başlat"}
+   737→        </button>
+   738→      )}
+   739→    </div>
+   740→  );
+   741→
+   742→  const renderPageInner = (p: MagPage) => {
+   743→    switch (p.kind) {
+   744→      case "cover":
+   745→        return renderCover(p);
+   746→      case "toc":
+   747→        return renderToc(p);
+   748→      case "article":
+   749→        return renderArticle(p);
+   750→      case "empty":
+   751→        return renderEmpty();
+   752→    }
+   753→  };
+   754→
+   755→  const renderLoadingPage = () => (
+   756→    <div className="flex h-full flex-col gap-3 px-7 pb-6 pt-6">
+   757→      <div className="h-3 w-1/3 animate-pulse rounded bg-stone-900/15" />
+   758→      <div className="h-8 w-3/4 animate-pulse rounded bg-stone-900/15" />
+   759→      <div className="h-40 w-full animate-pulse rounded bg-stone-900/10" />
+   760→      <div className="h-3 w-full animate-pulse rounded bg-stone-900/10" />
+   761→      <div className="h-3 w-full animate-pulse rounded bg-stone-900/10" />
+   762→      <div className="h-3 w-5/6 animate-pulse rounded bg-stone-900/10" />
+   763→      <div className="h-3 w-2/3 animate-pulse rounded bg-stone-900/10" />
+   764→    </div>
+   765→  );
+   766→
+   767→  // ================= SAHNE =================
+   768→
+   769→  return (
+   770→    <section className="relative overflow-x-clip" aria-label="KrimiScan Global e-dergi">
+   771→      {/* Üst kontrol şeridi */}
+   772→      <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-1 pb-3">
+   773→        <div className="flex min-w-0 items-center gap-2 text-xs text-slate-400">
+   774→          <Fingerprint className="h-4 w-4 shrink-0 text-amber-400" />
+   775→          <span className="truncate">
+   776→            <b className="text-slate-200">E-Dergi Baskısı</b>
+   777→            <span className="hidden sm:inline"> · {findings.length} konu · sayfaları sağ alt köşedeki kulaktan tutup çevirebilir, kenarlara tıklayabilir veya ← → tuşlarını kullanabilirsiniz</span>
+   778→          </span>
+   779→        </div>
+   780→        <div className="flex shrink-0 items-center gap-1.5">
+   781→          <button
+   782→            type="button"
+   783→            onClick={goPrev}
+   784→            disabled={page === 0 || !!flip || !!drag}
+   785→            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-amber-500/50 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-35"
+   786→            aria-label="Önceki sayfa"
+   787→          >
+   788→            <ChevronLeft className="h-4 w-4" />
+   789→          </button>
+   790→          <span className="mag-serif min-w-[86px] text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200/90">
+   791→            {pageLabel}
+   792→          </span>
+   793→          <button
+   794→            type="button"
+   795→            onClick={goNext}
+   796→            disabled={page >= totalPages - 1 || !!flip || !!drag}
+   797→            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-amber-500/50 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-35"
+   798→            aria-label="Sonraki sayfa"
+   799→          >
+   800→            <ChevronRight className="h-4 w-4" />
+   801→          </button>
+   802→        </div>
+   803→      </div>
+   804→
+   805→      {/* Sahne — koyu masa üzerinde krem kâğıt */}
+   806→      <div className="mx-auto w-full max-w-3xl px-1">
+   807→        <div
+   808→          ref={frameRef}
+   809→          className={`mag-frame relative h-[min(76vh,840px)] min-h-[540px] w-full sm:aspect-[3/4] sm:h-auto sm:max-h-[840px] sm:w-auto sm:min-w-0 sm:mx-auto ${
+   810→            drag ? "mag-dragging" : ""
+   811→          } ${flip ? (flip.dir === "next" ? "mag-flipping" : "mag-flipping-prev") : ""}`}
+   812→          onTouchStart={onTouchStart}
+   813→          onTouchEnd={onTouchEnd}
+   814→        >
+   815→          {/* Alt statik sayfa */}
+   816→          <div className="mag-page absolute inset-0 z-10" key={`static-${staticIndex}`}>
+   817→            {loading
+   818→              ? renderLoadingPage()
+   819→              : staticIndex >= 0 && staticIndex < totalPages
+   820→                ? renderPageInner(pages[staticIndex])
+   821→                : renderEmpty()}
+   822→          </div>
+   823→
+   824→          {/* Çevirme gölgesi */}
+   825→          {flip && <div className="mag-underglow active" />}
+   826→
+   827→          {/* Hedef sayfada yönü izleyen gölge süpürmesi */}
+   828→          {flip && (
+   829→            <div className={`mag-under-sweep ${flip.dir === "next" ? "leaf-sweep-next" : "leaf-sweep-prev"}`} />
+   830→          )}
+   831→
+   832→          {/* Sürükleme gölgesi — bükülmeyle yoğunlaşır */}
+   833→          {drag && (
+   834→            <div
+   835→              className="mag-underglow"
+   836→              style={{
+   837→                opacity: drag.settling ? 0 : Math.sin(Math.PI * drag.p) * 0.9,
+   838→                transition: "opacity 0.35s ease",
+   839→              }}
+   840→            />
+   841→          )}
+   842→
+   843→          {/* Çevrilen yaprak (tuş / klavye / kenar tıklaması) — iki panelli:
+   844→              sırt yarısı sabit, dış yarısı faz farkıyla katlanıp esner */}
+   845→          {flip && leafIndex >= 0 && leafIndex < totalPages && (
+   846→            <div className={`mag-leaf ${flip.dir === "next" ? "leaf-next" : "leaf-prev"}`}>
+   847→              <div className="mag-leaf-face mag-leaf-front">
+   848→                <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
+   849→                <div className="mag-leaf-shade" />
+   850→              </div>
+   851→              <div className="mag-leaf-face mag-leaf-back">
+   852→                <div className="mag-leaf-shade" />
+   853→              </div>
+   854→              <div className="mag-fold">
+   855→                <div className="mag-fold-face mag-fold-front">
+   856→                  <div className="mag-fold-content">
+   857→                    <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
+   858→                  </div>
+   859→                  <div className="mag-fold-crease" />
+   860→                  <div className="mag-corner-curl" />
+   861→                </div>
+   862→                <div className="mag-fold-face mag-fold-back">
+   863→                  <div className="mag-fold-crease back" />
+   864→                </div>
+   865→              </div>
+   866→            </div>
+   867→          )}
+   868→
+   869→          {/* Sürükleme yaprağı — açı parmağı izler, dış yarı kâğıt gibi kırışır */}
+   870→          {drag && leafIndex >= 0 && leafIndex < totalPages && (
+   871→            <div className="mag-leaf" ref={leafRef} style={{ transform: leafTransform(drag) }}>
+   872→              <div className="mag-leaf-face mag-leaf-front">
+   873→                <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
+   874→                <div className="mag-leaf-shade" />
+   875→              </div>
+   876→              <div className="mag-leaf-face mag-leaf-back">
+   877→                <div className="mag-leaf-shade" />
+   878→              </div>
+   879→              <div className="mag-fold" ref={foldRef} style={{ transform: foldTransform(drag) }}>
+   880→                <div className="mag-fold-face mag-fold-front">
+   881→                  <div className="mag-fold-content">
+   882→                    <div className="mag-page absolute inset-0">{renderPageInner(pages[leafIndex])}</div>
+   883→                  </div>
+   884→                  <div className="mag-fold-crease" />
+   885→                  <div className="mag-corner-curl" style={{ opacity: Math.sin(Math.PI * drag.p) }} />
+   886→                </div>
+   887→                <div className="mag-fold-face mag-fold-back">
+   888→                  <div className="mag-fold-crease back" />
+   889→                </div>
+   890→              </div>
+   891→            </div>
+   892→          )}
+   893→
+   894→          {/* Kenar tıklama bölgeleri (çevirme kısayolu) */}
+   895→          {!loading && !flip && !drag && (
+   896→            <>
+   897→              <button
+   898→                type="button"
+   899→                onClick={goPrev}
+   900→                disabled={page === 0}
+   901→                className="absolute bottom-[18%] left-0 top-0 z-20 w-[8%] cursor-w-resize rounded-l-md focus:outline-none disabled:cursor-default"
+   902→                aria-label="Önceki sayfaya çevir"
+   903→              />
+   904→              <button
+   905→                type="button"
+   906→                onClick={goNext}
+   907→                disabled={page >= totalPages - 1}
+   908→                className="absolute bottom-[18%] right-0 top-0 z-20 w-[8%] cursor-e-resize rounded-r-md focus:outline-none disabled:cursor-default"
+   909→                aria-label="Sonraki sayfaya çevir"
+   910→              />
+   911→            </>
+   912→          )}
+   913→
+   914→          {/* Köşe tutamakları — kulaktan tutup çekince sayfa el ile çevriliyormuş gibi döner */}
+   915→          {!loading && !flip && !drag && (
+   916→            <>
+   917→              {page < totalPages - 1 && (
+   918→                <button
+   919→                  type="button"
+   920→                  className="mag-ear mag-ear-right"
+   921→                  onPointerDown={onEarPointerDown("next")}
+   922→                  onClick={() => {
+   923→                    if (Date.now() - lastDragAt.current < 600) return;
+   924→                    goNext();
+   925→                  }}
+   926→                  aria-label="Sayfayı sağ alt köşeden tutup çevir"
+   927→                  title="Sağ alt köşeden tutup çevir"
+   928→                >
+   929→                  <span className="mag-ear-fold" />
+   930→                </button>
+   931→              )}
+   932→              {page > 0 && (
+   933→                <button
+   934→                  type="button"
+   935→                  className="mag-ear mag-ear-left"
+   936→                  onPointerDown={onEarPointerDown("prev")}
+   937→                  onClick={() => {
+   938→                    if (Date.now() - lastDragAt.current < 600) return;
+   939→                    goPrev();
+   940→                  }}
+   941→                  aria-label="Sayfayı sol alt köşeden tutup çevir"
+   942→                  title="Sol alt köşeden tutup çevir"
+   943→                >
+   944→                  <span className="mag-ear-fold" />
+   945→                </button>
+   946→              )}
+   947→            </>
+   948→          )}
+   949→        </div>
+   950→
+   951→        {/* Alt ilerleme çubuğu */}
+   952→        <div className="mx-auto mt-4 flex w-full max-w-3xl items-center gap-3">
+   953→          <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-800">
+   954→            <div
+   955→              className="h-full rounded-full bg-amber-500 transition-all duration-500"
+   956→              style={{ width: `${((page + 1) / totalPages) * 100}%` }}
+   957→            />
+   958→          </div>
+   959→          <span className="shrink-0 text-[11px] tabular-nums text-slate-400">
+   960→            {page + 1} / {totalPages}
+   961→          </span>
+   962→        </div>
+   963→      </div>
+   964→
+   965→      {/* Tam Oku — makalenin tamamı büyük okuma penceresinde */}
+   966→      {reading && (
+   967→        <FullReadDialog
+   968→          finding={findings.find((x) => x.id === reading.id) ?? reading}
+   969→          onClose={() => setReading(null)}
+   970→          onToggleBookmark={onToggleBookmark}
+   971→        />
+   972→      )}
+   973→    </section>
+   974→  );
+   975→}
+   976→

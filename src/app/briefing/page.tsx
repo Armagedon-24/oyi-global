@@ -235,7 +235,7 @@ export default function BriefingPage() {
                 <Layers className="h-3 w-3" /> {briefing.itemCount} bulgudan sentezlendi
               </Badge>
               <p className="hidden print:block text-xs ml-auto">
-                KrimiScan Global — Olay Yeri İnceleme Teknikleri Küresel İzleme Merkezi
+                OYİ GLOBAL — Olay Yeri İnceleme Teknikleri Küresel İzleme Merkezi
               </p>
             </div>
 
@@ -309,7 +309,7 @@ export default function BriefingPage() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between text-xs text-slate-400">
           <p className="flex items-center gap-1.5">
             <Fingerprint className="h-3.5 w-3.5 text-amber-500/70" />
-            KrimiScan Global
+            OYİ GLOBAL
           </p>
           <Link href="/report" className="hover:text-amber-300 transition-colors">
             Ham veri raporuna geç →

@@ -44,9 +44,17 @@ export async function GET(req: Request) {
       where,
       orderBy,
       take: limit,
+      include: { _count: { select: { comments: true } } },
     });
 
-    return NextResponse.json({ success: true, count: findings.length, findings });
+    return NextResponse.json({
+      success: true,
+      count: findings.length,
+      findings: findings.map((f) => ({
+        ...f,
+        commentCount: f._count.comments,
+      })),
+    });
   } catch (error) {
     console.error("[findings GET]", error);
     return NextResponse.json(

@@ -223,3 +223,26 @@ Stage Summary:
 - Tam Oku penceresi şıklarlaştırıldı: kağıt tonlu özel scrollbar + okuma kurdelesi
 - Çevirme animasyonu iki panelli kâğıt katlaması + gölge süpürmesi + sahne eğimiyle profesyonel seviyeye taşındı (klavye/kenar/kulak sürüklemesi hepsinde çalışıyor)
 - Değişen dosyalar: globals.css, magazine-view.tsx, full-read-dialog.tsx, page.tsx; scripts/verify-pro-flip.sh + verify-drag-fold.sh (yeni)
+
+---
+Task ID: 11
+Agent: main-agent (Z.ai)
+Task: "Derginin ismi OYİ GLOBAL olarak değiştir, şık bir logo, admin sayfası, tarama sadece admin, okur sadece okusun, haberlerin altına yorum"
+
+Work Log:
+- MARKA: KrimiScan Global → OYİ GLOBAL — layout metadata (title/description/authors, favicon /logo.svg), page.tsx (header/footer/olay adı oyi:search), magazine-view (running head, kapak manşeti, künye, aria-label), full-read-dialog üst şeridi, report, briefing, assistant karşılama + llm sistem istemi, export (dosya adı oyi-global-arsiv + application), watchlist event, globals.css başlık yorumu. Uygulama genelinde "KrimiScan" geçişi kalmadı (grep doğrulandı).
+- LOGO (oyi-logo.tsx + public/logo.svg): dergi ruhuna uygun mühür rozeti — koyu mürekkep disk + çift halka (krem/kehribar), kırık sırtlı parmak izi yayları, kehribar çerçeveli büyüteç + sap, lens parlaması, küresel izleme yıldızı. Header'da rozet+wordmark, dergi kapağında manşetin sağında, admin girişinde ve footer'da kullanıldı.
+- YETKİ SİSTEMİ: src/lib/auth.ts (ADMIN_PASSWORD .env → SHA-256 türev httpOnly çerez oyi_admin_session, 7 gün; isAdmin/requireAdmin). /api/admin/login, /logout, /session. Korumalı route'lar: scan/start, scan/step, scan/complete (401 çerezsiz — curl ile doğrulandı), enrich-images POST, findings/[id] DELETE.
+- ADMIN SAYFASI (/admin): oturum kontrolü → şifre ekranı (hatalı şifre hatası doğrulandı, oyi2026 ile giriş OK) → panel: 5 istatistik kartı (Toplam Bulgu/Yeni Teknoloji/Kaynak Dil/Okur Yorumu/Son Güncelleme), "Küresel Tarama — Yalnızca Editör" paneli (kapsam + kategori odağı + canlı ilerleme + tarama günlüğü — eski ana sayfa tarama akışı buraya taşındı), Son Bulgular (sil butonlu), Yorum Moderasyonu (tüm yorumlar + haberi + sil). Çıkış → çerez temizlenir.
+- ANA SAYFA OKUR MODUNA GEÇTİ: hero tarama paneli yerine okur karşılama bandı (salt-okunur sayı bilgisi: haber sayısı/kaynak dil/son güncelleme) + "Tarama yalnızca editör tarafından yapılır" notu + Editör Girişi bağlantısı (footer'da da Yönetim bağlantısı). Tarama state/akışı ve ilerleme bölümü ana sayfadan kaldırıldı; boş sayı durumu tarama butonsuz. MagazineView scanning/onStartScan props'ları silindi.
+- YORUMLAR: Comment modeli (author/body/ip/findingId, Cascade) + db push. GET/POST /api/findings/[id]/comments (2-1500 karakter doğrulama, IP başı 6 yorum/10dk hız sınırı, bal küpü honeypot alanı — doluysa sessizce filtrelenir), GET /api/comments (admin, haberiyle), DELETE /api/comments/[id] (admin). findings API'si commentCount döndürüyor.
+- OKUR MEKTUPLARI: Tam Oku penceresinin altına dergi üslubunda yorum köşesi — form (ad isteğe bağlı → "Anonim Okur", 0/1500 sayaç) + kehribar kenarlı mektup kartları (serif yazar + zaman damgası). Dergi makale sayfasında "n yorum" rozeti Tam Oku'yu açıyor.
+- Doğrulama (curl + agent-browser): çerezsiz scan/start→401, admin yorum listesi→401, yanlış şifre→401; doğru şifre→çerez, scan/start→scanId, complete→completed; yorum ekle (API + UI formu), UI'dan "3 yorum" rozeti canlı güncellendi; admin moderasyondan yorum silme (3→2); ana sayfada tarama butonu 0, KrimiScan geçişi 0; Tam Oku'da yorumlar listelendi; /admin tüm akışlar; mobil 390px scrollW=390; konsol hatası yok; tsc src temiz; 6 sayfa 200.
+- Ekran görüntüleri: download/oyi-global-kontrol/01-10 PNG (header, hero, kapak, yorum formu, okur mektupları, admin giriş/panel/moderasyon, mobil)
+- Not: ADMIN_PASSWORD=oyi2026 (.env) — kullanıcı değiştirebilir; değişiklik sonrası sunucu yeniden başlatılmalı.
+
+Stage Summary:
+- Dergi artık OYİ GLOBAL: mühür rozetli özel logo, tüm yüzeylerde yeni marka
+- Tarama yetkisi admin'e taşındı: /admin şifreli panel (tarama + bulgu silme + yorum moderasyonu); API'ler çerez korumalı; ana sayfa salt-okunur okuma modunda
+- Okurlar haberlerin altına "Okur Mektupları" köşesinden yorum bırakabiliyor (hız sınırı + bal küpü + admin moderasyonu ile)
+- Değişen dosyalar: schema.prisma, auth.ts (yeni), oyi-logo.tsx (yeni), public/logo.svg, admin/page.tsx (yeni), api/admin/* + api/comments/* + api/findings/[id]/comments (yeni), page.tsx, magazine-view.tsx, full-read-dialog.tsx, findings route, scan/* + enrich-images (koruma), layout, report, briefing, assistant, export, watchlist-dialog, llm.ts, forensics-config.ts, image-extract.ts, globals.css, types.ts, .env
